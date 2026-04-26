@@ -1,0 +1,118 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  width: 280px;
+  background: #ffffff;
+  color: #1a1a2e;
+}
+
+.popup { padding: 0; }
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+}
+
+.logo { font-size: 22px; }
+
+.title { font-weight: 700; font-size: 14px; }
+
+.subtitle { font-size: 11px; opacity: 0.8; margin-top: 1px; }
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #22c55e; margin-left: auto;
+  box-shadow: 0 0 6px #22c55e;
+}
+.status-dot.offline { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+
+.job-panel {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  background: #f0f0ff;
+  border-radius: 8px;
+  border-left: 3px solid #4f46e5;
+}
+
+.job-title { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+.job-company { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 0;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+}
+
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-primary { background: #4f46e5; color: white; }
+.btn-primary:hover { background: #4338ca; }
+
+.btn-success { background: #16a34a; color: white; }
+.btn-success:hover { background: #15803d; }
+.btn-success.tracked { background: #dcfce7; color: #15803d; cursor: default; }
+
+.btn-ghost {
+  background: #f9fafb;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  flex: 1;
+  padding: 7px;
+  font-size: 12px;
+}
+.btn-ghost:hover { background: #f3f4f6; }
+
+.divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 14px 16px 0;
+}
+
+.nav-btns {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px 0;
+}
+
+.status-msg {
+  margin: 10px 16px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: none;
+}
+
+.status-msg.success { background: #dcfce7; color: #15803d; display: block; }
+.status-msg.error { background: #fee2e2; color: #dc2626; display: block; }
+.status-msg.info { background: #e0f2fe; color: #0369a1; display: block; }
+
+.user-info {
+  padding: 10px 16px 14px;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 12px;
+}
+
+.user-name { font-size: 12px; font-weight: 600; color: #374151; }
+.user-email { font-size: 11px; color: #9ca3af; margin-top: 1px; }

@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Job Autofill — Naukri · IIMjobs · LinkedIn",
+  "version": "1.0.0",
+  "description": "Paste your resume once. Autofills job application forms on Naukri, IIMjobs, and LinkedIn.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "*://*.naukri.com/*",
+    "*://*.iimjobs.com/*",
+    "*://*.linkedin.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Job Autofill",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.naukri.com/*",
+        "*://*.iimjobs.com/*",
+        "*://*.linkedin.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

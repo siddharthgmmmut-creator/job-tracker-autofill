@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Application Assistant</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="popup">
+    <!-- Header -->
+    <div class="header">
+      <span class="logo">💼</span>
+      <div>
+        <div class="title">Job Tracker</div>
+        <div class="subtitle" id="page-info">Loading...</div>
+      </div>
+      <div class="status-dot" id="status-dot" title="Tracker status"></div>
+    </div>
+
+    <!-- Job Info (if on job page) -->
+    <div class="job-panel" id="job-panel" style="display:none">
+      <div class="job-title" id="job-title"></div>
+      <div class="job-company" id="job-company"></div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="actions">
+      <button class="btn btn-primary" id="btn-fill">
+        ✏️ Auto-Fill Form
+      </button>
+      <button class="btn btn-success" id="btn-track">
+        ✅ Track Application
+      </button>
+    </div>
+
+    <!-- Divider -->
+    <div class="divider"></div>
+
+    <!-- Navigation -->
+    <div class="nav-btns">
+      <button class="btn btn-ghost" id="btn-dashboard">📊 Dashboard</button>
+      <button class="btn btn-ghost" id="btn-referrals">🤝 Referrals</button>
+    </div>
+
+    <!-- Status message -->
+    <div class="status-msg" id="status-msg"></div>
+
+    <!-- User info -->
+    <div class="user-info">
+      <div class="user-name" id="user-name">Siddharth</div>
+      <div class="user-email" id="user-email">siddharthgmmmut@gmail.com</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

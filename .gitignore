@@ -1,0 +1,65 @@
+# ── Dependencies ──────────────────────────────────────────────
+node_modules/
+*/node_modules/
+**/node_modules/
+
+# ── Environment variables ──────────────────────────────────────
+# Never commit real .env — use .env.example as template
+.env
+**/.env
+!**/.env.example
+
+# ── Logs ──────────────────────────────────────────────────────
+logs/
+*.log
+*/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Build output ───────────────────────────────────────────────
+dist/
+build/
+*/dist/
+*/build/
+client/dist/
+
+# ── Database (local data — not for version control) ────────────
+*.db
+*.db-shm
+*.db-wal
+data/
+*/data/
+
+# ── Backups (auto-generated) ───────────────────────────────────
+backups/
+*/backups/
+
+# ── Personal CV documents (sensitive) ─────────────────────────
+*.pdf
+*.docx
+*.doc
+*.ppt
+*.pptx
+~$*
+
+# ── OS files ──────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# ── Editor ────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+
+# ── Temp / lock files ─────────────────────────────────────────
+*.tmp
+*.temp
+.cache/

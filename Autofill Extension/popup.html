@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Autofill</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      width: 360px;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white;
+      padding: 14px 16px 12px;
+    }
+    .header h1 { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+    .header p  { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+
+    .tabs {
+      display: flex;
+      background: white;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .tab {
+      flex: 1;
+      padding: 9px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: #64748b;
+      transition: all 0.15s;
+    }
+    .tab.active { border-bottom-color: #4f46e5; color: #4f46e5; }
+
+    .panel { display: none; padding: 14px; }
+    .panel.active { display: block; }
+
+    /* Resume panel */
+    .resume-area {
+      width: 100%;
+      height: 160px;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 12px;
+      resize: none;
+      background: white;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+    .resume-area:focus { outline: none; border-color: #4f46e5; }
+
+    .hint { font-size: 11px; color: #94a3b8; margin-top: 6px; }
+
+    /* Profile panel */
+    .field { margin-bottom: 10px; }
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .field input {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      font-size: 13px;
+      background: white;
+      transition: border 0.15s;
+    }
+    .field input:focus { outline: none; border-color: #4f46e5; }
+    .field input.auto { border-color: #10b981; background: #f0fdf4; }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-top: 8px;
+    }
+    .btn-primary { background: #4f46e5; color: white; }
+    .btn-primary:hover { background: #4338ca; }
+    .btn-green { background: #10b981; color: white; }
+    .btn-green:hover { background: #059669; }
+    .btn-outline {
+      background: white;
+      color: #4f46e5;
+      border: 1px solid #4f46e5;
+    }
+    .btn-outline:hover { background: #eef2ff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status messages */
+    .status {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      display: none;
+    }
+    .status.success { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .status.error   { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .status.info    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .status.show    { display: block; }
+
+    /* Platform indicator */
+    .platform-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: white;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 11px;
+      color: #64748b;
+    }
+    .platform-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #cbd5e1;
+    }
+    .platform-dot.active { background: #10b981; }
+
+    /* Autofill panel */
+    .autofill-section { margin-bottom: 12px; }
+    .autofill-section h3 { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+    .field-list { background: white; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
+    .field-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 10px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 12px;
+    }
+    .field-row:last-child { border-bottom: none; }
+    .field-key { color: #64748b; }
+    .field-val { color: #1e293b; font-weight: 500; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .field-val.empty { color: #cbd5e1; font-style: italic; }
+
+    .divider { height: 1px; background: #e2e8f0; margin: 12px 0; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>✦ Job Autofill</h1>
+    <p>Naukri · IIMjobs · LinkedIn</p>
+  </div>
+
+  <div id="platformBar" class="platform-bar">
+    <span class="platform-dot" id="platformDot"></span>
+    <span id="platformName">Not on a supported page</span>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="autofill">Fill Form</div>
+    <div class="tab" data-tab="profile">My Profile</div>
+    <div class="tab" data-tab="resume">Resume</div>
+  </div>
+
+  <!-- AUTOFILL TAB -->
+  <div class="panel active" id="tab-autofill">
+    <div id="profilePreview"></div>
+    <button class="btn btn-green" id="btnAutofill">⚡ Autofill This Page</button>
+    <button class="btn btn-outline" id="btnClear" style="margin-top:6px">✕ Clear Filled Fields</button>
+    <div class="status" id="autofillStatus"></div>
+  </div>
+
+  <!-- PROFILE TAB -->
+  <div class="panel" id="tab-profile">
+    <div class="row">
+      <div class="field">
+        <label>Full Name</label>
+        <input type="text" id="pName" placeholder="Siddharth Sharma" />
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="pEmail" placeholder="you@example.com" />
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Phone</label>
+        <input type="text" id="pPhone" placeholder="+91 9876543210" />
+      </div>
+      <div class="field">
+        <label>Total Experience (yrs)</label>
+        <input type="text" id="pExp" placeholder="5" />
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Current Company</label>
+        <input type="text" id="pCompany" placeholder="Darwinbox" />
+      </div>
+      <div class="field">
+        <label>Current Role</label>
+        <input type="text" id="pRole" placeholder="Growth Manager" />
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Current CTC (LPA)</label>
+        <input type="text" id="pCurrentCtc" placeholder="15" />
+      </div>
+      <div class="field">
+        <label>Expected CTC (LPA)</label>
+        <input type="text" id="pExpectedCtc" placeholder="28" />
+      </div>
+    </div>
+    <div class="field">
+      <label>Notice Period (days)</label>
+      <input type="text" id="pNotice" placeholder="30" />
+    </div>
+    <div class="field">
+      <label>LinkedIn URL</label>
+      <input type="text" id="pLinkedin" placeholder="linkedin.com/in/yourname" />
+    </div>
+    <div class="field">
+      <label>Skills (comma-separated)</label>
+      <input type="text" id="pSkills" placeholder="Growth, GTM, Analytics, SQL" />
+    </div>
+    <div class="field">
+      <label>Education</label>
+      <input type="text" id="pEducation" placeholder="MBA, IIM Lucknow" />
+    </div>
+    <button class="btn btn-primary" id="btnSaveProfile">💾 Save Profile</button>
+    <div class="status" id="profileStatus"></div>
+  </div>
+
+  <!-- RESUME TAB -->
+  <div class="panel" id="tab-resume">
+    <p style="font-size:12px; color:#374151; margin-bottom:8px;">
+      Paste your resume text below. The extension will extract your details automatically.
+    </p>
+    <textarea
+      class="resume-area"
+      id="resumeText"
+      placeholder="Paste your full resume here...
+
+Example:
+Siddharth Sharma
+siddharth@email.com | +91 9876543210
+IIM Lucknow | MBA 2022
+
+Experience: 5 years
+Currently at Darwinbox as Growth Manager
+..."></textarea>
+    <p class="hint">💡 Copy all text from your resume (Ctrl+A, Ctrl+C) and paste here.</p>
+    <button class="btn btn-primary" id="btnParse">🔍 Extract from Resume</button>
+    <div class="status" id="parseStatus"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
