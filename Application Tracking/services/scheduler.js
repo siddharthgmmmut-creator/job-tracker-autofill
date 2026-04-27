@@ -95,6 +95,41 @@ function logScrape(platform, searchTerm, location, found, newJobs, skipped, stat
   `).run(platform, searchTerm, location, found, newJobs, skipped, status, errorMsg, durationMs);
 }
 
+// ── Scraping visibility thresholds ────────────────────────────
+const LOW_COUNT_THRESHOLDS = {
+  naukri:   { found: 10, newJobs: 2 },
+  iimjobs:  { found: 5,  newJobs: 1 },
+  linkedin: { found: 5,  newJobs: 1 },
+};
+
+/**
+ * Emit structured visibility logs after each platform scrape.
+ * Flags low counts so you notice scraper drift immediately.
+ */
+function logPlatformVisibility(platform, found, newJobs, skipped, durationMs) {
+  const thresh = LOW_COUNT_THRESHOLDS[platform] || { found: 5, newJobs: 1 };
+  const durationSec = (durationMs / 1000).toFixed(1);
+
+  // Always emit a structured summary line
+  logger.info(
+    `📊 [${platform.toUpperCase()}] found=${found} | new=${newJobs} | skipped=${skipped} | time=${durationSec}s`
+  );
+
+  // Warn when counts look suspiciously low
+  if (found < thresh.found) {
+    logger.warn(
+      `⚠️  LOW JOB COUNT on ${platform.toUpperCase()}: only ${found} jobs fetched ` +
+      `(expected ≥ ${thresh.found}). Possible scraper drift or site layout change.`
+    );
+  }
+  if (newJobs < thresh.newJobs && found >= thresh.found) {
+    logger.warn(
+      `⚠️  VERY FEW NEW JOBS on ${platform.toUpperCase()}: ${newJobs} new out of ${found} fetched. ` +
+      `Database may already be saturated or dedup threshold is too aggressive.`
+    );
+  }
+}
+
 /**
  * Main scraping function - runs all scrapers
  */
@@ -107,10 +142,15 @@ async function runScrape() {
   scraperRunning = true;
   const startTime = Date.now();
   logger.info('🚀 Starting job scrape...');
+  logger.info('─'.repeat(55));
+
+  // Track per-platform results for end-of-run summary
+  const platformResults = [];
 
   try {
     let totalNew = 0;
     let totalSkipped = 0;
+    let totalFound = 0;
 
     // 1. Scrape Naukri (primary - most reliable for India)
     try {
@@ -120,13 +160,17 @@ async function runScrape() {
         SEARCH_KEYWORDS.slice(0, 5), // Top 5 keywords
         ALL_SEARCH_LOCATIONS.slice(0, 5) // Top 5 locations
       );
+      const elapsed = Date.now() - t;
       const { new: n, skipped: s } = saveJobs(naukriJobs);
-      totalNew += n; totalSkipped += s;
-      logScrape('naukri', SEARCH_KEYWORDS.slice(0,5).join(','), 'all', naukriJobs.length, n, s, 'success', null, Date.now()-t);
-      logger.info(`✅ Naukri: ${naukriJobs.length} found, ${n} new, ${s} skipped`);
+      totalNew += n; totalSkipped += s; totalFound += naukriJobs.length;
+      logScrape('naukri', SEARCH_KEYWORDS.slice(0,5).join(','), 'all', naukriJobs.length, n, s, 'success', null, elapsed);
+      logPlatformVisibility('naukri', naukriJobs.length, n, s, elapsed);
+      platformResults.push({ platform: 'Naukri', found: naukriJobs.length, newJobs: n, skipped: s, status: '✅' });
     } catch (err) {
       logger.error('❌ Naukri scrape failed:', err.message);
       logScrape('naukri', '', '', 0, 0, 0, 'error', err.message, 0);
+      logger.warn('⚠️  Naukri returned 0 jobs due to error — check scraper logs above.');
+      platformResults.push({ platform: 'Naukri', found: 0, newJobs: 0, skipped: 0, status: '❌', error: err.message });
     }
 
     // 2. Scrape IIMjobs (for premium/senior roles)
@@ -137,13 +181,17 @@ async function runScrape() {
         ['growth manager', 'gtm manager', 'chief of staff', 'operations manager'],
         ['Mumbai', 'Delhi', 'Bangalore']
       );
+      const elapsed = Date.now() - t;
       const { new: n, skipped: s } = saveJobs(iimJobs);
-      totalNew += n; totalSkipped += s;
-      logScrape('iimjobs', 'growth,gtm,ops', 'Mumbai,Delhi,Bangalore', iimJobs.length, n, s, 'success', null, Date.now()-t);
-      logger.info(`✅ IIMjobs: ${iimJobs.length} found, ${n} new, ${s} skipped`);
+      totalNew += n; totalSkipped += s; totalFound += iimJobs.length;
+      logScrape('iimjobs', 'growth,gtm,ops', 'Mumbai,Delhi,Bangalore', iimJobs.length, n, s, 'success', null, elapsed);
+      logPlatformVisibility('iimjobs', iimJobs.length, n, s, elapsed);
+      platformResults.push({ platform: 'IIMjobs', found: iimJobs.length, newJobs: n, skipped: s, status: '✅' });
     } catch (err) {
       logger.error('❌ IIMjobs scrape failed:', err.message);
       logScrape('iimjobs', '', '', 0, 0, 0, 'error', err.message, 0);
+      logger.warn('⚠️  IIMjobs returned 0 jobs due to error — check scraper logs above.');
+      platformResults.push({ platform: 'IIMjobs', found: 0, newJobs: 0, skipped: 0, status: '❌', error: err.message });
     }
 
     // 3. Company Portals — DISABLED (returns 0 jobs, causes timeouts)
@@ -162,23 +210,51 @@ async function runScrape() {
           ['growth manager', 'gtm manager', 'chief of staff'],
           ['Mumbai', 'Pune', 'Delhi']
         );
-        const { new: n, skipped: s } = saveJobs(liJobs.filter(j => !j.is_search_url));
-        totalNew += n; totalSkipped += s;
-        logScrape('linkedin', 'growth,gtm,cos', 'Mumbai,Pune,Delhi', liJobs.length, n, s, 'success', null, Date.now()-t);
-        logger.info(`✅ LinkedIn: ${liJobs.length} found, ${n} new, ${s} skipped`);
+        const elapsed = Date.now() - t;
+        const filteredLi = liJobs.filter(j => !j.is_search_url);
+        const { new: n, skipped: s } = saveJobs(filteredLi);
+        totalNew += n; totalSkipped += s; totalFound += filteredLi.length;
+        logScrape('linkedin', 'growth,gtm,cos', 'Mumbai,Pune,Delhi', filteredLi.length, n, s, 'success', null, elapsed);
+        logPlatformVisibility('linkedin', filteredLi.length, n, s, elapsed);
+        platformResults.push({ platform: 'LinkedIn', found: filteredLi.length, newJobs: n, skipped: s, status: '✅' });
       } catch (err) {
         logger.error('❌ LinkedIn scrape failed:', err.message);
         logScrape('linkedin', '', '', 0, 0, 0, 'error', err.message, 0);
+        logger.warn('⚠️  LinkedIn returned 0 jobs due to error — session cookie may have expired.');
+        platformResults.push({ platform: 'LinkedIn', found: 0, newJobs: 0, skipped: 0, status: '❌', error: err.message });
       }
     } else {
       logger.info('⏭️  LinkedIn skipped (no LINKEDIN_SESSION_COOKIE set)');
+      platformResults.push({ platform: 'LinkedIn', found: 0, newJobs: 0, skipped: 0, status: '⏭️ skipped' });
     }
 
     const duration = Math.round((Date.now() - startTime) / 1000);
-    logger.info(`✅ Scrape complete! ${totalNew} new jobs added in ${duration}s`);
+
+    // ── End-of-run visibility summary ─────────────────────────
+    logger.info('─'.repeat(55));
+    logger.info('📋 SCRAPE SUMMARY');
+    logger.info('─'.repeat(55));
+    for (const r of platformResults) {
+      const line = `  ${r.status} ${r.platform.padEnd(10)} │ found: ${String(r.found).padStart(4)} │ new: ${String(r.newJobs).padStart(4)} │ skipped: ${String(r.skipped).padStart(4)}`;
+      logger.info(line);
+      if (r.error) logger.info(`     error: ${r.error.slice(0, 80)}`);
+    }
+    logger.info('─'.repeat(55));
+    logger.info(`  TOTAL  │ found: ${String(totalFound).padStart(4)} │ new: ${String(totalNew).padStart(4)} │ skipped: ${String(totalSkipped).padStart(4)} │ time: ${duration}s`);
+    logger.info('─'.repeat(55));
+
+    // Global low-count alert
+    if (totalNew === 0 && totalFound > 0) {
+      logger.warn('⚠️  ALL JOBS ALREADY IN DB — zero new jobs saved. This is normal if scrapers ran recently.');
+    } else if (totalNew === 0 && totalFound === 0) {
+      logger.warn('🚨 CRITICAL: No jobs fetched from ANY platform. All scrapers may have failed or been blocked.');
+    } else if (totalNew < 5) {
+      logger.warn(`⚠️  Very low new job count today (${totalNew}). Scrapers may be degraded.`);
+    }
+
     setSetting('last_scrape', new Date().toISOString(), 'string');
 
-    return { success: true, totalNew, totalSkipped, duration };
+    return { success: true, totalNew, totalSkipped, totalFound, duration, platformResults };
   } catch (err) {
     logger.error('❌ Scrape failed:', err);
     throw err;

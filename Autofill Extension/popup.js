@@ -273,9 +273,13 @@ document.getElementById('btnAutofill').addEventListener('click', () => {
       }, (results) => {
         const result = results?.[0]?.result || {};
         if (result.filled > 0) {
-          showStatus('autofillStatus', `✅ Filled ${result.filled} field(s)!`, 'success');
+          let msg = `✅ Filled ${result.filled} field(s)!`;
+          if (result.missing?.length) msg += ` · Please provide: ${result.missing.join(', ')}`;
+          showStatus('autofillStatus', msg, 'success');
         } else if (result.skipped > 0) {
           showStatus('autofillStatus', `ℹ️ ${result.skipped} field(s) already filled — skipped.`, 'info');
+        } else if (result.missing?.length) {
+          showStatus('autofillStatus', `⚠️ Please provide in profile: ${result.missing.join(', ')}`, 'warn');
         } else {
           showStatus('autofillStatus', '⚠️ No fillable fields found on this page.', 'error');
         }
@@ -302,196 +306,278 @@ document.getElementById('btnClear').addEventListener('click', () => {
 function triggerAutofill(profile) {
   const AUTOFILL_ATTR = 'data-autofilled';
 
-  // Field detection patterns
+  // ── Canonical MATCHERS with display names for multi-question answers ──
   const MATCHERS = [
     {
-      key: 'name',
-      labels:   ['full name', 'your name', 'name', 'candidate name', 'applicant name'],
-      attrs:    ['fullname', 'full_name', 'name', 'candidatename', 'applicantname', 'your-name'],
-      placeholders: ['full name', 'your name', 'enter name', 'name'],
-      types:    ['text'],
+      key: 'name', displayName: 'Full Name',
+      labels:       ['full name', 'your name', 'name', 'candidate name', 'applicant name', 'first name'],
+      attrs:        ['fullname', 'full_name', 'name', 'candidatename', 'applicantname', 'your-name', 'firstname'],
+      placeholders: ['full name', 'your name', 'enter name'],
+      types:        [],
     },
     {
-      key: 'email',
-      labels:   ['email', 'email address', 'e-mail', 'mail id'],
-      attrs:    ['email', 'emailid', 'email_id', 'emailaddress', 'mail'],
+      key: 'email', displayName: 'Email',
+      labels:       ['email', 'email address', 'e-mail', 'mail id', 'email id'],
+      attrs:        ['email', 'emailid', 'email_id', 'emailaddress', 'mail'],
       placeholders: ['email', 'your email', 'enter email'],
-      types:    ['email'],
+      types:        ['email'],
     },
     {
-      key: 'phone',
-      labels:   ['phone', 'mobile', 'contact number', 'phone number', 'mobile number', 'contact'],
-      attrs:    ['phone', 'mobile', 'contact', 'mobileno', 'phoneno', 'phone_number', 'mobile_number'],
+      key: 'phone', displayName: 'Phone',
+      labels:       ['phone', 'mobile', 'contact number', 'phone number', 'mobile number', 'contact', 'cell'],
+      attrs:        ['phone', 'mobile', 'contact', 'mobileno', 'phoneno', 'phone_number', 'mobile_number', 'cell'],
       placeholders: ['phone', 'mobile', 'contact number', 'enter phone'],
-      types:    ['tel'],
+      types:        ['tel'],
     },
     {
-      key: 'experience',
-      labels:   ['total experience', 'experience', 'years of experience', 'work experience', 'relevant experience'],
-      attrs:    ['experience', 'totalexp', 'total_experience', 'workyears', 'exp', 'yoe'],
-      placeholders: ['experience', 'years', 'total experience'],
+      key: 'experience', displayName: 'Total Experience',
+      labels:       ['total experience', 'experience', 'years of experience', 'work experience',
+                     'relevant experience', 'years', 'total work experience', 'overall experience', 'yoe'],
+      attrs:        ['experience', 'totalexp', 'total_experience', 'workyears', 'exp', 'yoe', 'totalyears'],
+      placeholders: ['experience', 'years', 'total experience', 'yrs'],
+      types:        [],
     },
     {
-      key: 'currentCompany',
-      labels:   ['current company', 'present company', 'employer', 'current employer', 'organization'],
-      attrs:    ['currentcompany', 'current_company', 'presentcompany', 'employer', 'company'],
-      placeholders: ['current company', 'employer', 'company name'],
+      key: 'currentCompany', displayName: 'Current Company',
+      labels:       ['current company', 'present company', 'employer', 'current employer',
+                     'organization', 'current organization', 'working at', 'present employer'],
+      attrs:        ['currentcompany', 'current_company', 'presentcompany', 'employer', 'company', 'organisation'],
+      placeholders: ['current company', 'employer', 'company name', 'organization'],
+      types:        [],
     },
     {
-      key: 'currentRole',
-      labels:   ['current designation', 'current role', 'current title', 'designation', 'job title'],
-      attrs:    ['designation', 'jobtitle', 'job_title', 'currentrole', 'title'],
-      placeholders: ['designation', 'job title', 'current role'],
+      key: 'currentRole', displayName: 'Current Role',
+      labels:       ['current designation', 'current role', 'current title', 'designation',
+                     'job title', 'position', 'current position', 'present designation', 'profile'],
+      attrs:        ['designation', 'jobtitle', 'job_title', 'currentrole', 'title', 'position'],
+      placeholders: ['designation', 'job title', 'current role', 'position'],
+      types:        [],
     },
     {
-      key: 'currentCtc',
-      labels:   ['current ctc', 'current salary', 'ctc', 'annual ctc'],
-      attrs:    ['currentctc', 'current_ctc', 'ctc', 'currentsalary'],
-      placeholders: ['current ctc', 'current salary'],
+      key: 'currentCtc', displayName: 'Current CTC',
+      labels:       ['current ctc', 'current salary', 'ctc', 'annual ctc', 'current compensation',
+                     'present ctc', 'present salary', 'current annual salary', 'fixed ctc'],
+      attrs:        ['currentctc', 'current_ctc', 'ctc', 'currentsalary', 'currentcompensation', 'fixedctc'],
+      placeholders: ['current ctc', 'current salary', 'annual ctc'],
+      types:        [],
     },
     {
-      key: 'expectedCtc',
-      labels:   ['expected ctc', 'expected salary', 'desired salary', 'salary expectation'],
-      attrs:    ['expectedctc', 'expected_ctc', 'expectedsalary', 'desiresalary'],
-      placeholders: ['expected ctc', 'expected salary'],
+      key: 'expectedCtc', displayName: 'Expected CTC',
+      labels:       ['expected ctc', 'expected salary', 'desired salary', 'salary expectation',
+                     'expected compensation', 'expected package', 'target ctc', 'salary expectation'],
+      attrs:        ['expectedctc', 'expected_ctc', 'expectedsalary', 'desiredsalary', 'targetctc', 'expectedpackage'],
+      placeholders: ['expected ctc', 'expected salary', 'desired salary'],
+      types:        [],
     },
     {
-      key: 'noticePeriod',
-      labels:   ['notice period', 'notice', 'serving notice', 'available in'],
-      attrs:    ['noticeperiod', 'notice_period', 'notice'],
-      placeholders: ['notice period', 'days'],
+      key: 'noticePeriod', displayName: 'Notice Period',
+      labels:       ['notice period', 'notice', 'serving notice', 'available in', 'availability',
+                     'joining time', 'when can you join', 'earliest joining', 'last working day',
+                     'joining date', 'available from', 'how soon'],
+      attrs:        ['noticeperiod', 'notice_period', 'notice', 'availability', 'joiningtime', 'joiningdate'],
+      placeholders: ['notice period', 'days', 'available in', 'joining', 'how soon'],
+      types:        [],
     },
     {
-      key: 'linkedin',
-      labels:   ['linkedin', 'linkedin url', 'linkedin profile'],
-      attrs:    ['linkedin', 'linkedinurl', 'linkedin_url', 'linkedinprofile'],
-      placeholders: ['linkedin', 'linkedin url', 'linkedin.com'],
+      key: 'linkedin', displayName: 'LinkedIn URL',
+      labels:       ['linkedin', 'linkedin url', 'linkedin profile', 'linkedin link', 'linkedin id'],
+      attrs:        ['linkedin', 'linkedinurl', 'linkedin_url', 'linkedinprofile'],
+      placeholders: ['linkedin', 'linkedin url', 'linkedin.com', 'linkedin profile'],
+      types:        [],
     },
     {
-      key: 'skills',
-      labels:   ['skills', 'key skills', 'technical skills', 'areas of expertise'],
-      attrs:    ['skills', 'keyskills', 'key_skills', 'technicalskills'],
-      placeholders: ['skills', 'key skills'],
+      key: 'skills', displayName: 'Skills',
+      labels:       ['skills', 'key skills', 'technical skills', 'areas of expertise',
+                     'core skills', 'competencies', 'expertise', 'proficiency'],
+      attrs:        ['skills', 'keyskills', 'key_skills', 'technicalskills', 'expertise', 'competencies'],
+      placeholders: ['skills', 'key skills', 'your skills', 'enter skills'],
+      types:        [],
+    },
+    {
+      key: 'education', displayName: 'Education',
+      labels:       ['education', 'qualification', 'highest qualification', 'academic qualification',
+                     'degree', 'educational qualification'],
+      attrs:        ['education', 'qualification', 'degree', 'highestqualification'],
+      placeholders: ['education', 'qualification', 'degree'],
+      types:        [],
     },
   ];
 
-  function normalize(str) {
+  // Cities to auto-respond "Yes" for relocation questions
+  const PREFERRED_CITIES = [
+    'mumbai', 'pune', 'delhi', 'gurgaon', 'noida', 'bangalore',
+    'hyderabad', 'chennai', 'kolkata', 'ahmedabad',
+  ];
+
+  // ── Normalize: lowercase, remove punctuation ──────────────────
+  function norm(str) {
     return (str || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
   }
 
-  function getFieldLabel(input) {
-    // Try explicit label
+  // ── Get best label text for an input ─────────────────────────
+  function getLabel(input) {
     if (input.id) {
-      const label = document.querySelector(`label[for="${input.id}"]`);
-      if (label) return normalize(label.textContent);
+      try {
+        const lbl = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+        if (lbl) return norm(lbl.textContent);
+      } catch {}
     }
-    // Try parent label
-    const parentLabel = input.closest('label');
-    if (parentLabel) return normalize(parentLabel.textContent);
-    // Try aria-label
-    if (input.getAttribute('aria-label')) return normalize(input.getAttribute('aria-label'));
-    // Try previous sibling text
+    const parentLbl = input.closest('label');
+    if (parentLbl) return norm(parentLbl.textContent);
+    const ariaLabel = input.getAttribute('aria-label');
+    if (ariaLabel) return norm(ariaLabel);
+    const ariaLabelledBy = input.getAttribute('aria-labelledby');
+    if (ariaLabelledBy) {
+      const el = document.getElementById(ariaLabelledBy);
+      if (el) return norm(el.textContent);
+    }
     const prev = input.previousElementSibling;
-    if (prev) return normalize(prev.textContent);
-    // Try parent's text excluding input value
-    const parent = input.parentElement;
-    if (parent) {
-      const text = normalize(parent.textContent.replace(input.value, ''));
-      return text.slice(0, 50);
+    if (prev && !['INPUT','SELECT','TEXTAREA','BUTTON'].includes(prev.tagName)) {
+      return norm(prev.textContent).slice(0, 100);
     }
+    // Fallback: parent text minus input value
+    const parent = input.parentElement;
+    if (parent) return norm((parent.textContent || '').replace(input.value || '', '')).slice(0, 100);
     return '';
   }
 
-  function matchField(input) {
-    const inputName  = normalize(input.name || '');
-    const inputId    = normalize(input.id || '');
-    const inputPlace = normalize(input.placeholder || '');
-    const inputLabel = getFieldLabel(input);
-    const inputType  = (input.type || 'text').toLowerCase();
-
-    for (const matcher of MATCHERS) {
-      // Match by type (email/tel — high confidence)
-      if (matcher.types && matcher.types.includes(inputType)) return matcher.key;
-
-      // Match by attribute name/id
-      if (matcher.attrs) {
-        for (const attr of matcher.attrs) {
-          if (inputName === attr || inputId === attr) return matcher.key;
-          if (inputName.includes(attr) || inputId.includes(attr)) return matcher.key;
-        }
-      }
-
-      // Match by label text
-      if (matcher.labels) {
-        for (const lbl of matcher.labels) {
-          if (inputLabel.includes(lbl)) return matcher.key;
-        }
-      }
-
-      // Match by placeholder
-      if (matcher.placeholders) {
-        for (const ph of matcher.placeholders) {
-          if (inputPlace.includes(ph)) return matcher.key;
-        }
-      }
-    }
-
+  // ── Check if input is asking about relocation ────────────────
+  function checkRelocation(label) {
+    const relocKw = ['relocat', 'willing to move', 'open to move', 'comfortable moving',
+                     'willing to work', 'open to work', 'comfortable with location'];
+    if (relocKw.some(k => label.includes(k))) return 'Yes';
+    // If the question mentions a specific city we prefer → "Yes"
+    if (PREFERRED_CITIES.some(city => label.includes(city))) return 'Yes';
     return null;
   }
 
+  // ── Detect ALL matching MATCHERS for an input ────────────────
+  function detectMatches(input) {
+    const label = getLabel(input);
+    const place = norm(input.placeholder || '');
+    const name  = norm(input.name  || '');
+    const id    = norm(input.id    || '');
+    const type  = (input.type || 'text').toLowerCase();
+
+    const found = [];
+    for (const m of MATCHERS) {
+      let hit = false;
+
+      // High-confidence type match (email / tel)
+      if (!hit && m.types.length && m.types.includes(type)) hit = true;
+
+      // Attr / id exact or contains match
+      if (!hit && m.attrs) {
+        for (const a of m.attrs) {
+          if (name === a || id === a || name.includes(a) || id.includes(a)) { hit = true; break; }
+        }
+      }
+
+      // Semantic label match (case-insensitive, punctuation-stripped)
+      if (!hit && m.labels) {
+        for (const l of m.labels) {
+          if (label.includes(l)) { hit = true; break; }
+        }
+      }
+
+      // Placeholder match
+      if (!hit && m.placeholders) {
+        for (const p of m.placeholders) {
+          if (place.includes(p)) { hit = true; break; }
+        }
+      }
+
+      if (hit) found.push(m);
+    }
+    return { label, found };
+  }
+
+  // ── React/Vue compatible fill ─────────────────────────────────
   function fillInput(input, value) {
     if (!value) return false;
-    // Don't overwrite if already filled
-    if (input.value && input.value.trim().length > 0) return false;
-    // Don't fill if already autofilled by us
     if (input.getAttribute(AUTOFILL_ATTR)) return false;
+    if (input.value && input.value.trim()) return false;
 
-    // Set value using native setter (React/Vue compatible)
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-      || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+    const proto = (input.tagName === 'TEXTAREA')
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) setter.call(input, value);
+    else input.value = value;
 
-    if (nativeSetter) {
-      nativeSetter.call(input, value);
-    } else {
-      input.value = value;
-    }
-
-    // Trigger events so React/Vue state updates
     input.dispatchEvent(new Event('input',  { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.dispatchEvent(new Event('blur',   { bubbles: true }));
 
     input.setAttribute(AUTOFILL_ATTR, '1');
-    input.style.borderColor = '#10b981'; // green tint
+    input.style.outline = '2px solid #10b981';
+    input.style.outlineOffset = '1px';
     return true;
   }
 
-  // Find all visible inputs and textareas
+  // ── Gather all visible inputs ─────────────────────────────────
   const inputs = [...document.querySelectorAll(
-    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([disabled]), textarea:not([disabled])'
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"])' +
+    ':not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([disabled]),' +
+    'textarea:not([disabled])'
   )].filter(el => {
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0; // visible only
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
   });
 
   let filled = 0;
   let skipped = 0;
+  const missing = [];  // profile keys the user hasn't set
 
   for (const input of inputs) {
-    const fieldKey = matchField(input);
-    if (!fieldKey) continue;
+    const label = getLabel(input);
 
-    const value = profile[fieldKey];
-    if (!value) continue;
+    // ── Step 1: Relocation check ────────────────────────────────
+    const relocAnswer = checkRelocation(label);
+    if (relocAnswer) {
+      if (input.value && input.value.trim()) { skipped++; continue; }
+      if (fillInput(input, relocAnswer)) filled++;
+      continue;
+    }
 
-    if (input.value && input.value.trim()) {
-      skipped++;
-    } else if (fillInput(input, value)) {
-      filled++;
+    // ── Step 2: Semantic field detection ────────────────────────
+    const { found } = detectMatches(input);
+    if (found.length === 0) continue; // no match — skip silently
+
+    if (found.length === 1) {
+      // ── Single field ────────────────────────────────────────
+      const key   = found[0].key;
+      const value = profile[key];
+      if (!value) { missing.push(found[0].displayName); continue; }
+      if (input.value && input.value.trim()) { skipped++; continue; }
+      if (fillInput(input, value)) filled++;
+
+    } else {
+      // ── Multi-question: "Current CTC / Expected CTC?" ────────
+      // Combine all answers into one response string
+      const parts = found
+        .filter(m => profile[m.key])
+        .map(m => `${m.displayName}: ${profile[m.key]}`);
+
+      const missingParts = found
+        .filter(m => !profile[m.key])
+        .map(m => m.displayName);
+
+      if (missingParts.length) missing.push(...missingParts);
+
+      if (parts.length > 0) {
+        if (input.value && input.value.trim()) { skipped++; continue; }
+        if (fillInput(input, parts.join(' | '))) filled++;
+      }
     }
   }
 
-  return { filled, skipped };
+  // Log any unresolved fields for debugging
+  if (missing.length > 0) {
+    console.warn('[Autofill] Missing profile fields:', [...new Set(missing)].join(', '));
+  }
+
+  return { filled, skipped, missing: [...new Set(missing)] };
 }
 
 function clearAutofilled() {

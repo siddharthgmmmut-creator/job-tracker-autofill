@@ -130,6 +130,20 @@ router.get('/', (req, res) => {
   });
 });
 
+// GET /api/jobs/companies — All distinct company names (for dropdown)
+router.get('/companies', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT DISTINCT company FROM jobs
+    WHERE is_active = 1
+      AND (is_not_fit = 0 OR is_not_fit IS NULL)
+      AND company IS NOT NULL AND company != ''
+      AND company NOT LIKE 'See %'
+    ORDER BY company ASC
+  `).all();
+  res.json({ success: true, data: rows.map(r => r.company) });
+});
+
 // GET /api/jobs/stats - Quick stats
 router.get('/stats', (req, res) => {
   const db = getDb();

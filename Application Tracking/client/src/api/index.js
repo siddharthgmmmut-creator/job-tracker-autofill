@@ -23,6 +23,7 @@ export const jobsApi = {
   update: (id, data) => api.put(`/jobs/${id}`, data),
   delete: (id, permanent = false) => api.delete(`/jobs/${id}`, { params: { permanent } }),
   markNotFit: (id) => api.patch(`/jobs/${id}/not-fit`),
+  companies: () => api.get('/jobs/companies'),
 };
 
 // ── Referrals ────────────────────────────────────────────────
