@@ -89,11 +89,12 @@ function computeFitScore(job) {
   return Math.min(100, Math.max(0, score));
 }
 
-// Match label: only show if score is meaningful
+// Match label: three tiers; hide below 40 (confidence too low to show anything)
 function getMatchLabel(score) {
   if (score >= 75) return 'high';
   if (score >= 55) return 'moderate';
-  return null; // hide entirely — don't mislead
+  if (score >= 40) return 'low';
+  return null; // hide entirely — score is not meaningful enough
 }
 
 function getRoleCategory(title) {
@@ -109,49 +110,137 @@ function isTopCompany(company) {
   return TOP_COMPANIES.some(top => n.includes(top));
 }
 
-function getCompanyLogoUrl(company) {
-  if (!company) return null;
-  const n = company.toLowerCase();
-  if (n.startsWith('see ') || n === 'unknown') return null;
-  const slug = n
-    .replace(/\b(pvt|ltd|inc|corp|limited|private|technologies|tech|solutions|services|india|group|co|ventures)\b\.?/g, '')
-    .replace(/[^a-z0-9]/g, '');
-  if (slug.length < 2) return null;
-  return `https://logo.clearbit.com/${slug}.com`;
+/**
+ * Clean job title: if company was extracted FROM title, remove it.
+ * This prevents showing both "<Company> - <Role>" and then company separately.
+ * Examples:
+ *   "Goldman Sachs - Senior PM" + extracted company "Goldman Sachs" → "Senior PM"
+ *   "Senior PM at Acme" + extracted company "Acme" → "Senior PM"
+ *   "Senior PM" (no extraction) → "Senior PM" (unchanged)
+ */
+function extractTitleForDisplay(fullTitle, extractedCompany) {
+  if (!fullTitle || !extractedCompany || extractedCompany === 'Company Not Mentioned' || extractedCompany === 'Not Disclosed') {
+    return fullTitle;  // No cleaning needed
+  }
+
+  const title = fullTitle.trim();
+  const companyLower = extractedCompany.toLowerCase();
+
+  // Pattern A: "Company - Role" → extract "Role"
+  const dashMatch = title.match(/^(.+?)\s*[-–]\s*(.+)$/);
+  if (dashMatch) {
+    const beforeDash = dashMatch[1].trim().toLowerCase();
+    if (beforeDash.includes(companyLower) || companyLower.includes(beforeDash)) {
+      return dashMatch[2].trim();  // Return the part after dash
+    }
+  }
+
+  // Pattern B: "Role at Company" → extract "Role"
+  const atMatch = title.match(/^(.+?)\s+at\s+(.+)$/i);
+  if (atMatch) {
+    const afterAt = atMatch[2].trim().toLowerCase();
+    if (afterAt.includes(companyLower) || companyLower.includes(afterAt)) {
+      return atMatch[1].trim();  // Return the part before "at"
+    }
+  }
+
+  // No match → return original title
+  return title;
 }
 
-// Part 3: clean company display
-function displayCompanyName(company) {
-  if (!company || company.trim() === '' || company.toLowerCase().startsWith('see '))
-    return 'Company Not Mentioned';
-  return company;
+// ── Recruiter detection ───────────────────────────────────────────
+const RECRUITER_KEYWORDS = ['consulting', 'recruitment', 'staffing', 'talent', 'hr', 'solutions', 'search'];
+
+function hasRecruiterKeyword(text) {
+  const t = (text || '').toLowerCase();
+  return RECRUITER_KEYWORDS.some(kw => t.includes(kw));
+}
+
+/**
+ * Extracts canonical company name from a job object.
+ * Strict order:
+ *  1. Use job.company if non-empty (and not a scraper "See…" placeholder).
+ *  2. Parse from title: "<Company> - <Role>" or "<Role> at <Company>".
+ *  3. If extracted name contains recruiter keywords → "Not Disclosed", isConsultantPost = true.
+ *  4. Fallback → "Company Not Mentioned".
+ * Hard rules: never put a recruiter name into company; never default to a previous job's company.
+ */
+function extractCompanyInfo(job) {
+  const UNKNOWN    = { company: 'Company Not Mentioned', isConsultantPost: false };
+  const CONSULTANT = { company: 'Not Disclosed',         isConsultantPost: true  };
+
+  // Step 1: use job.company if present and not a scraper placeholder
+  const rawCompany = (job.company || '').trim();
+  if (rawCompany && !rawCompany.toLowerCase().startsWith('see ')) {
+    return hasRecruiterKeyword(rawCompany)
+      ? CONSULTANT
+      : { company: rawCompany, isConsultantPost: false };
+  }
+
+  // Step 2: parse from title
+  const title = (job.title || '').trim();
+
+  // Pattern A: "<Company> - <Role>"  (dash or em-dash)
+  const dashMatch = title.match(/^(.+?)\s*[-–]\s*(.+)$/);
+  if (dashMatch) {
+    const c = dashMatch[1].trim();
+    return hasRecruiterKeyword(c) ? CONSULTANT : { company: c, isConsultantPost: false };
+  }
+
+  // Pattern B: "<Role> at <Company>"
+  const atMatch = title.match(/\bat\s+(.+)$/i);
+  if (atMatch) {
+    const c = atMatch[1].trim();
+    return hasRecruiterKeyword(c) ? CONSULTANT : { company: c, isConsultantPost: false };
+  }
+
+  // Step 4: unknown
+  return UNKNOWN;
+}
+
+// domainGuess = lower(remove spaces) + ".com"  — used only for valid company names
+function getCompanyDomain(company) {
+  return company.toLowerCase().replace(/\s+/g, '') + '.com';
 }
 
 // ── CompanyLogo ───────────────────────────────────────────────────
+// Receives the already-extracted company name (from extractCompanyInfo).
+// "Not Disclosed" and "Company Not Mentioned" → always show neutral placeholder.
+// Valid company → try Clearbit; on fail → neutral placeholder (no letter initials).
+const PLACEHOLDER_COMPANIES = new Set(['Not Disclosed', 'Company Not Mentioned']);
+
 function CompanyLogo({ company, size = 40 }) {
-  const [src, setSrc] = useState(() => getCompanyLogoUrl(company));
-  const name = displayCompanyName(company);
-  const isUnknown = name === 'Company Not Mentioned';
-  const initials = isUnknown
-    ? '?'
-    : name.split(/\s+/).map(w => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase();
+  const isPlaceholder = PLACEHOLDER_COMPANIES.has(company);
+
+  // Lazy-init src; useEffect resets it whenever `company` prop changes
+  // (guards against cross-job icon bleed if component instance is reused).
+  const [src, setSrc] = useState(() =>
+    isPlaceholder ? null : `https://logo.clearbit.com/${getCompanyDomain(company)}`
+  );
+
+  useEffect(() => {
+    setSrc(isPlaceholder ? null : `https://logo.clearbit.com/${getCompanyDomain(company)}`);
+  }, [company, isPlaceholder]);
 
   if (!src) {
+    // Neutral placeholder — same style regardless of reason (not disclosed / not mentioned / fetch fail)
     return (
       <div
         style={{ width: size, height: size, minWidth: size }}
-        className={`flex items-center justify-center rounded-xl font-bold text-xs shrink-0 ${
-          isUnknown
-            ? 'bg-slate-100 dark:bg-gray-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-gray-700'
-            : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-800'
-        }`}>
-        {initials}
+        className="flex items-center justify-center rounded-xl shrink-0
+                   bg-slate-100 dark:bg-gray-800 border border-slate-200 dark:border-gray-700">
+        <svg className="w-5 h-5 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5
+                   M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
       </div>
     );
   }
+
   return (
     <img
-      src={src} alt={name} width={size} height={size}
+      src={src} alt={company} width={size} height={size}
       style={{ minWidth: size }}
       className="rounded-xl object-contain bg-white border border-slate-200 dark:border-gray-700 shrink-0 p-0.5"
       onError={() => setSrc(null)}
@@ -159,13 +248,13 @@ function CompanyLogo({ company, size = 40 }) {
   );
 }
 
-// ── MatchBadge (Part 5 — semantic, not numeric) ───────────────────
+// ── MatchBadge — text-only, never numeric ────────────────────────
 function MatchBadge({ score }) {
   const level = getMatchLabel(score);
   if (!level) return null;
-  return level === 'high'
-    ? <span className="match-high">✦ High Match</span>
-    : <span className="match-moderate">◈ Moderate</span>;
+  if (level === 'high')     return <span className="match-high">✦ High Match</span>;
+  if (level === 'moderate') return <span className="match-moderate">◈ Moderate Match</span>;
+  /* level === 'low' */     return <span className="match-low">· Low Match</span>;
 }
 
 // ── CompanySearchDropdown (Part 9 fix — no cut-off) ───────────────
@@ -243,12 +332,18 @@ function JobCard({ job, onApply, onNotFit }) {
   const [applying, setApplying]     = useState(false);
   const [notFitting, setNotFitting] = useState(false);
 
-  const fitScore   = computeFitScore(job);
-  const company    = displayCompanyName(job.company);
-  const isUnknown  = company === 'Company Not Mentioned';
+  const fitScore = computeFitScore(job);
+  const { company, isConsultantPost } = extractCompanyInfo(job);
+  const isUnknown = company === 'Company Not Mentioned' || company === 'Not Disclosed';
 
-  // Part 4: referral ONLY when actual connection data exists
-  const hasRealReferral = (job.referral_count || 0) > 0;
+  // Clean the title: remove company name if it was parsed from the title
+  const displayTitle = extractTitleForDisplay(job.title, company);
+
+  // Referral: requires a known company AND actual connection data.
+  // Never show for "Not Disclosed" or "Company Not Mentioned" — no one to refer to.
+  const referralCount = job.referral_count || 0;
+  const canShowReferral = !isUnknown && referralCount > 0;
+  const referralLabel   = referralCount >= 2 ? 'Strong Referral' : 'Possible Referral';
 
   const handleApply = async (e) => {
     e.preventDefault();
@@ -284,107 +379,146 @@ function JobCard({ job, onApply, onNotFit }) {
   const isDirectUrl = !!job.job_url;
 
   return (
-    <div className="card-hover p-5 flex flex-col gap-4">
-      {/* ── Top: logo + title + badges ── */}
-      <div className="flex items-start gap-3">
-        <CompanyLogo company={job.company} size={40} />
+    <div className="bg-white dark:bg-gray-900 rounded-lg border border-slate-200 dark:border-gray-800
+                    shadow-sm hover:shadow-md transition-shadow duration-200 p-4
+                    flex flex-col" style={{ gap: '12px' }}>
 
-        {/* Title block */}
-        <div className="flex-1 min-w-0">
-          <a href={applyUrl} target="_blank" rel="noopener noreferrer"
-             className="block font-semibold text-slate-900 dark:text-white text-[15px] leading-snug
-                        hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-            {job.title}
-          </a>
-          <p className={`text-sm mt-0.5 ${isUnknown ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'}`}>
-            {company}
-          </p>
-          {job.location && (
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 flex items-center gap-1">
-              <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              {job.location}
-            </p>
-          )}
+      {/* ════════════════════════════════════════════════════════════
+          SECTION 1: Company Logo + Title/Company/Location
+          FIXED HEIGHT: Never shifts regardless of title length
+          ════════════════════════════════════════════════════════════ */}
+      <div className="flex items-start" style={{ gap: '12px' }}>
+        {/* LEFT: Company icon (48px, fixed) */}
+        <div className="flex-shrink-0">
+          <CompanyLogo company={company} size={48} />
         </div>
 
-        {/* Right column: match + referral badges */}
-        <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <MatchBadge score={fitScore} />
-          {/* Part 4: referral badge ONLY with real data */}
-          {hasRealReferral && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
-                             bg-blue-50 text-blue-700 border border-blue-200
-                             dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800">
-              🤝 {job.referral_count} Referral{job.referral_count > 1 ? 's' : ''}
-            </span>
-          )}
-          {/* Top Company tag */}
-          {isTopCompany(job.company) && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
-                             bg-amber-50 text-amber-700 border border-amber-200
-                             dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800">
-              🏢 Top Co
-            </span>
+        {/* RIGHT: Title, Company, Location (flexing but with line limits) */}
+        <div className="flex-1 min-w-0">
+          {/* LINE 1: Job Title (max 2 lines, ~32px fixed height) */}
+          <a href={applyUrl} target="_blank" rel="noopener noreferrer"
+             className="block font-bold text-[15px] text-slate-900 dark:text-white leading-tight
+                        hover:text-blue-600 dark:hover:text-blue-400 transition-colors line-clamp-2"
+             style={{ minHeight: '32px', display: 'flex', alignItems: 'center' }}>
+            {displayTitle}
+          </a>
+
+          {/* LINE 2: Company Name (single line, ~24px fixed height) */}
+          <p className={`text-sm leading-tight ${
+            isUnknown
+              ? 'text-slate-400 dark:text-slate-500 italic'
+              : 'text-slate-600 dark:text-slate-400'
+          }`}
+          style={{ minHeight: '24px', display: 'flex', alignItems: 'center' }}>
+            {company}
+          </p>
+
+          {/* LINE 3: Location (single line, ~20px fixed height, only if present) */}
+          {job.location && (
+            <p className="flex items-center text-xs text-slate-400 dark:text-slate-500 leading-tight"
+               style={{ minHeight: '20px', gap: '4px' }}>
+              <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="truncate">{job.location}</span>
+            </p>
           )}
         </div>
       </div>
 
-      {/* Optional salary / date row */}
-      {(job.salary_range || postedAgo) && (
-        <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500">
-          {job.salary_range
-            ? <span className="text-green-600 dark:text-green-400 font-medium">💰 {job.salary_range}</span>
-            : <span />}
-          {postedAgo && <span>{postedAgo}</span>}
+      {/* ════════════════════════════════════════════════════════════
+          SECTION 2: Tags Row (Match / Consultant / Referral)
+          Only rendered when at least one tag exists
+          ════════════════════════════════════════════════════════════ */}
+      {(getMatchLabel(fitScore) !== null || isConsultantPost || canShowReferral) && (
+        <div className="flex items-center flex-wrap" style={{ gap: '8px' }}>
+          <MatchBadge score={fitScore} />
+          {isConsultantPost && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium
+                             bg-orange-50 text-orange-600 border border-orange-200
+                             dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800">
+              Posted via Consultant
+            </span>
+          )}
+          {canShowReferral && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold
+                             bg-blue-50 text-blue-700 border border-blue-200
+                             dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800">
+              🤝 {referralLabel}
+            </span>
+          )}
         </div>
       )}
 
-      {/* Divider */}
-      <div className="border-t border-slate-100 dark:border-gray-800" />
+      {/* ════════════════════════════════════════════════════════════
+          SECTION 3: Salary + Posted Date (FIXED HEIGHT: 20px)
+          Only rendered when at least one exists
+          ════════════════════════════════════════════════════════════ */}
+      {(job.salary_range || postedAgo) && (
+        <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-500"
+             style={{ minHeight: '20px' }}>
+          <span className="truncate">
+            {job.salary_range
+              ? <span className="text-green-600 dark:text-green-400 font-medium">💰 {job.salary_range}</span>
+              : ''}
+          </span>
+          {postedAgo && <span className="flex-shrink-0">{postedAgo}</span>}
+        </div>
+      )}
 
-      {/* ── Actions ── */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      {/* ════════════════════════════════════════════════════════════
+          DIVIDER
+          ════════════════════════════════════════════════════════════ */}
+      <div className="border-t border-slate-100 dark:border-gray-800" style={{ margin: '4px 0' }} />
+
+      {/* ════════════════════════════════════════════════════════════
+          SECTION 4: Action Buttons (FIXED HEIGHT: 36px)
+          Never shifts: all buttons same height
+          ════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center flex-wrap" style={{ gap: '8px', minHeight: '36px' }}>
         <a href={applyUrl} target="_blank" rel="noopener noreferrer"
-           className="btn-primary text-xs py-1.5 px-3"
+           className="btn-primary text-xs py-1.5 px-3 flex-shrink-0"
            title={isDirectUrl ? 'Open job posting' : 'Search online'}>
-          {isDirectUrl ? 'Apply ↗' : '🔎 Find Online'}
+          {isDirectUrl ? 'Apply ↗' : '🔎 Find'}
         </a>
-        <Link to={`/referrals?job_id=${job.id}`} className="btn-secondary text-xs py-1.5 px-3">
-          🤝 Find Referral
+        <Link to={`/referrals?job_id=${job.id}`} className="btn-secondary text-xs py-1.5 px-3 flex-shrink-0">
+          🤝 Refer
         </Link>
         {!job.application_id ? (
           <button onClick={handleApply} disabled={applying}
-                  className="btn-secondary text-xs py-1.5 px-3 !text-green-700 !border-green-200 hover:!bg-green-50
+                  className="btn-secondary text-xs py-1.5 px-3 flex-shrink-0 !text-green-700 !border-green-200 hover:!bg-green-50
                              dark:!text-green-400 dark:!border-green-800">
-            {applying ? '…' : '✓ Mark Applied'}
+            {applying ? '…' : '✓ Applied'}
           </button>
         ) : (
           <Link to={`/applications/${job.application_id}`}
-                className="inline-flex items-center gap-1 text-xs px-3 py-1.5
+                className="inline-flex items-center text-xs px-3 py-1.5 flex-shrink-0
                            bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400
-                           border border-green-200 dark:border-green-800 rounded-xl hover:bg-green-100 transition-colors">
+                           border border-green-200 dark:border-green-800 rounded-lg hover:bg-green-100
+                           transition-colors">
             ✅ Applied
           </Link>
         )}
-        {/* Not Fit — pushed to right */}
         <button onClick={handleNotFit} disabled={notFitting}
-                title={job.is_not_fit ? 'Restore to list' : 'Hide — not a fit'}
-                className="btn-secondary text-xs py-1.5 px-2.5 ml-auto
+                title={job.is_not_fit ? 'Restore' : 'Hide'}
+                className="btn-secondary text-xs py-1.5 px-2.5 flex-shrink-0 ml-auto
                            !text-red-400 !border-red-100 hover:!bg-red-50
                            dark:!text-red-500 dark:!border-red-900">
           {notFitting ? '…' : job.is_not_fit ? '↩️' : '👎'}
         </button>
       </div>
 
-      {/* Platform badge — subtle, bottom */}
-      <div className="flex items-center gap-2 -mt-1">
+      {/* ════════════════════════════════════════════════════════════
+          SECTION 5: Platform + Status Badges (FIXED HEIGHT: 24px)
+          ════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center" style={{ gap: '8px', minHeight: '24px' }}>
         <Badge type={job.platform} />
         {job.application_status && <Badge type={job.application_status} />}
       </div>
+
     </div>
   );
 }
