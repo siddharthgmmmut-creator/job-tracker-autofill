@@ -33,7 +33,7 @@ router.get('/', (req, res) => {
   const {
     search, location, platform, page = 1, limit = 50,
     sort = 'posted_date', order = 'desc', active = '1',
-    days, applied, hidden, user_exp
+    days, applied, hidden, user_exp, role_tag,
   } = req.query;
 
   let query = `
@@ -77,6 +77,13 @@ router.get('/', (req, res) => {
   if (days) {
     query += ` AND j.posted_date >= datetime('now', ?)`;
     params.push(`-${days} days`);
+  }
+
+  // Role Intelligence filter — match against the fit_category column (primary role)
+  // or any secondary role stored in the JSON role_tags array
+  if (role_tag) {
+    query += ` AND (j.fit_category = ? OR j.role_tags LIKE ?)`;
+    params.push(role_tag, `%"id":"${role_tag}"%`);
   }
 
   if (applied === 'yes') {

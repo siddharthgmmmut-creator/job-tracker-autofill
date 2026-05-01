@@ -70,6 +70,16 @@ export const settingsApi = {
   createBackup: () => api.post('/settings/backup'),
   listBackups: () => api.get('/settings/backups/list'),
   triggerScrape: () => api.post('/settings/scrape/run'),
+  scrapeStatus:  () => api.get('/settings/scrape/status'),
   seedDemo: () => api.post('/settings/seed-demo'),
   systemStatus: () => api.get('/settings/system/status'),
+};
+
+// ── Role Intelligence ─────────────────────────────────────────
+export const rolesApi = {
+  list:     ()         => api.get('/settings/roles'),
+  create:   (data)     => api.post('/settings/roles', data),
+  update:   (id, data) => api.put(`/settings/roles/${id}`, data),
+  remove:   (id)       => api.delete(`/settings/roles/${id}`),
+  classify: ()         => api.post('/settings/roles/classify'),
 };

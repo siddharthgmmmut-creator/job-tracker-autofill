@@ -1,96 +1,232 @@
+@import url('https://rsms.me/inter/inter.css');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────
+   Design tokens — light & dark
+   ───────────────────────────────────────────────────────────── */
 @layer base {
+  :root {
+    --surface:        255 255 255;   /* card / popover */
+    --surface-raised: 255 255 255;   /* elevated surface */
+    --surface-sunken: 250 250 249;   /* page bg */
+    --ink:             10  10  11;   /* primary text */
+    --ink-muted:       82  82  91;   /* secondary text */
+    --ink-faint:      113 113 122;   /* tertiary text */
+    --line:           228 228 231;   /* hairline borders */
+    --line-strong:    212 212 216;   /* hover/strong borders */
+  }
+
+  .dark {
+    --surface:         24  24  27;
+    --surface-raised:  32  32  36;
+    --surface-sunken:  10  10  11;
+    --ink:            250 250 250;
+    --ink-muted:      161 161 170;
+    --ink-faint:      113 113 122;
+    --line:            39  39  42;
+    --line-strong:     63  63  70;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
-    @apply bg-slate-50 text-slate-900;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    @apply bg-surface-sunken text-ink font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01", "ss03";
+    font-variation-settings: "opsz" 14;
   }
-  .dark body {
-    @apply bg-gray-950 text-slate-100;
+
+  /* Tighter, confident headings */
+  h1, h2, h3, h4 {
+    @apply text-ink tracking-tight;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
   }
+
+  /* Tabular numbers wherever data is shown */
+  .tabular { font-variant-numeric: tabular-nums; }
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Components
+   ───────────────────────────────────────────────────────────── */
 @layer components {
-  /* ── Cards ── */
+
+  /* ── Surfaces ─────────────────────────────────────────────── */
   .card {
-    @apply bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-gray-800 shadow-sm;
+    @apply bg-surface rounded-xl border border-line;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03);
   }
   .card-hover {
-    @apply bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-gray-800 shadow-sm
-           hover:shadow-md hover:border-slate-300 dark:hover:border-gray-700 transition-all duration-200;
+    @apply card transition-all duration-200;
+  }
+  .card-hover:hover {
+    @apply border-line-strong;
+    box-shadow: 0 4px 16px -4px rgb(0 0 0 / 0.08), 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  }
+  .surface-raised {
+    @apply bg-surface-raised border border-line rounded-xl;
   }
 
-  /* ── Buttons ── */
+  /* ── Buttons ──────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5
+           px-3.5 py-2 text-sm font-medium rounded-lg
+           transition-all duration-150 select-none
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    letter-spacing: -0.005em;
+  }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2
-           bg-blue-600 hover:bg-blue-700 active:bg-blue-800
-           text-white text-sm font-medium rounded-xl
-           transition-colors duration-150 select-none;
+    @apply btn bg-ink text-surface
+           hover:bg-ink/90 active:scale-[0.98];
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+  }
+  .dark .btn-primary {
+    @apply bg-white text-zinc-900 hover:bg-white/90;
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2
-           bg-white dark:bg-gray-800
-           hover:bg-slate-50 dark:hover:bg-gray-700
-           text-slate-700 dark:text-slate-200 text-sm font-medium
-           rounded-xl border border-slate-200 dark:border-gray-700
-           transition-colors duration-150 select-none;
+    @apply btn bg-surface text-ink border border-line
+           hover:bg-surface-sunken hover:border-line-strong;
   }
+  .btn-ghost {
+    @apply btn text-ink-muted hover:text-ink hover:bg-surface-sunken;
+  }
+  .btn-accent {
+    @apply btn text-white;
+    background: linear-gradient(180deg, #6366F1 0%, #4F46E5 100%);
+    box-shadow: 0 1px 2px 0 rgb(79 70 229 / 0.3), inset 0 1px 0 0 rgb(255 255 255 / 0.15);
+  }
+  .btn-accent:hover { background: linear-gradient(180deg, #4F46E5 0%, #4338CA 100%); }
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2
-           bg-red-600 hover:bg-red-700
-           text-white text-sm font-medium rounded-xl
-           transition-colors duration-150;
+    @apply btn bg-red-600 text-white hover:bg-red-700;
   }
 
-  /* ── Form ── */
+  /* ── Form ─────────────────────────────────────────────────── */
   .input {
-    @apply block w-full rounded-xl border border-slate-200 dark:border-gray-700
-           bg-white dark:bg-gray-800
-           text-slate-900 dark:text-slate-100
+    @apply block w-full rounded-lg border border-line
+           bg-surface text-ink
            px-3 py-2 text-sm
-           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+           placeholder:text-ink-faint
+           focus:outline-none focus:ring-2 focus:ring-accent-500/20 focus:border-accent-500
            transition-colors duration-150;
   }
   .label {
-    @apply block text-xs font-semibold text-slate-500 dark:text-slate-400
-           uppercase tracking-wide mb-1.5;
+    @apply block text-2xs font-medium text-ink-muted
+           uppercase tracking-wider mb-1.5;
   }
 
-  /* ── Badges ── */
+  /* ── Sidebar nav ──────────────────────────────────────────── */
+  .nav-item {
+    @apply relative flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium
+           text-ink-muted hover:text-ink hover:bg-surface-sunken
+           transition-colors duration-150;
+  }
+  .nav-item-active {
+    @apply text-ink bg-surface-sunken;
+  }
+  .nav-item-active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-full bg-accent-600;
+  }
+
+  /* ── Badges ───────────────────────────────────────────────── */
   .badge {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium;
+  }
+  .badge-dot {
+    @apply inline-block w-1.5 h-1.5 rounded-full;
   }
 
-  /* ── Match labels (Part 5) ── */
+  /* ── Match labels (intelligence layer) ────────────────────── */
   .match-high {
-    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
-           bg-green-50 text-green-700 border border-green-200
-           dark:bg-green-900/20 dark:text-green-400 dark:border-green-800;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-semibold
+           bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20
+           dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20;
   }
   .match-moderate {
-    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
-           bg-yellow-50 text-yellow-700 border border-yellow-200
-           dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-semibold
+           bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20
+           dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20;
+  }
+  .match-low {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-2xs font-semibold
+           bg-zinc-100 text-zinc-600 ring-1 ring-inset ring-zinc-500/20
+           dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-500/20;
+  }
+
+  /* ── Section headings ────────────────────────────────────── */
+  .h-eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-wider text-ink-faint;
+  }
+  .h-section {
+    @apply text-sm font-semibold text-ink tracking-tight;
+  }
+  .h-page {
+    @apply text-2xl font-semibold text-ink tracking-tighter;
+  }
+
+  /* ── Utility: divider ────────────────────────────────────── */
+  .divider { @apply border-t border-line; }
+
+  /* ── Kbd shortcut ────────────────────────────────────────── */
+  .kbd {
+    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1
+           text-2xs font-mono font-medium text-ink-faint
+           bg-surface-sunken border border-line rounded;
+  }
+
+  /* ── Pill (status, filters) ──────────────────────────────── */
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
+           text-2xs font-medium text-ink-muted
+           bg-surface border border-line;
   }
 }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { @apply bg-transparent; }
-::-webkit-scrollbar-thumb { @apply bg-slate-300 dark:bg-gray-600 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-slate-400 dark:bg-gray-500; }
+/* ─────────────────────────────────────────────────────────────
+   Scrollbar
+   ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--line-strong));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--ink-faint));
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
 
-/* ── Animations ── */
+/* ─────────────────────────────────────────────────────────────
+   Animations
+   ───────────────────────────────────────────────────────────── */
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-in { animation: fade-in 0.18s ease-out; }
-
 @keyframes slide-down {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in    { animation: fade-in 0.18s ease-out; }
 .animate-slide-down { animation: slide-down 0.15s ease-out; }
+.animate-slide-up   { animation: slide-up 0.18s ease-out; }
+
+/* Subtle focus rings */
+button:focus-visible, a:focus-visible {
+  outline: 2px solid rgb(99 102 241 / 0.45);
+  outline-offset: 2px;
+  border-radius: 8px;
+}

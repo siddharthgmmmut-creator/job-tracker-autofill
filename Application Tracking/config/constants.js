@@ -7,11 +7,13 @@ const TARGET_ROLES = [
   'Senior Growth Manager',
   'Growth GTM Manager',
   'Growth Business Planning Manager',
+  'Growth Marketing Manager',
   'GTM Manager',
   'GTM Lead',
   'Go-to-Market Manager',
   'AI GTM Engineer',
   'Chief of Staff',
+  "CEO's Office",
   "Founder's Office",
   'Operations Manager',
   'Business Planning Manager',
@@ -21,40 +23,66 @@ const TARGET_ROLES = [
 ];
 
 const SEARCH_KEYWORDS = [
+  // Core — highest yield for target profile
   'growth manager',
   'gtm manager',
   'go-to-market manager',
   'chief of staff',
+  "founder's office",
+  'growth marketing',
+  'revenue operations',
+  'growth lead',
+  // Strategy & Ops
+  'program manager',
+  'senior program manager',
+  'business operations',
+  'strategy analyst',
+  'strategy operations',
+  'product strategy',
+  'ceo office',
   'operations manager',
   'business planning manager',
-  'ai gtm',
-  "founder's office",
   'senior manager operations',
+  // Broader reach
+  'product manager',
+  'business analyst',
+  'performance marketing',
+  'digital marketing manager',
+  'ai gtm',
 ];
 
 const LOCATIONS = {
-  PRIMARY: ['Mumbai', 'Navi Mumbai', 'Thane'],
-  SECONDARY: ['Pune'],
-  TERTIARY: ['Delhi', 'Noida', 'Gurgaon', 'Gurugram', 'New Delhi', 'NCR'],
-  FALLBACK: ['Lucknow', 'Kanpur'],
-  LAST_RESORT: ['Bangalore', 'Bengaluru', 'Hyderabad'],
-  EXCLUDE: ['Chennai', 'Kochi', 'Cochin', 'Coimbatore', 'Trivandrum'],
+  PRIMARY:    ['Mumbai', 'Navi Mumbai', 'Thane'],
+  SECONDARY:  ['Pune'],
+  TERTIARY:   ['Delhi', 'Noida', 'Gurgaon', 'Gurugram', 'New Delhi', 'NCR'],
+  EXTENDED:   ['Bangalore', 'Bengaluru', 'Hyderabad', 'Chennai'],
+  METRO:      ['Kolkata', 'Ahmedabad', 'Jaipur'],
+  REMOTE:     ['Remote', 'Remote India'],
+  FALLBACK:   ['Lucknow'],
+  EXCLUDE:    ['Kochi', 'Cochin', 'Coimbatore', 'Trivandrum', 'Kanpur'],
 };
 
 const LOCATION_PRIORITY = {
+  // Primary
   Mumbai: 1, 'Navi Mumbai': 1, Thane: 1,
   Pune: 2,
+  // NCR
   Delhi: 3, Noida: 3, Gurgaon: 3, Gurugram: 3, 'New Delhi': 3, NCR: 3,
-  Lucknow: 4, Kanpur: 4,
-  Bangalore: 5, Bengaluru: 5, Hyderabad: 5,
+  Remote: 3, 'Remote India': 3,
+  // South / Other metros
+  Bangalore: 5, Bengaluru: 5, Hyderabad: 5, Chennai: 5,
+  Kolkata: 5, Ahmedabad: 5, Jaipur: 5,
+  Lucknow: 6,
 };
 
 const ALL_SEARCH_LOCATIONS = [
   ...LOCATIONS.PRIMARY,
   ...LOCATIONS.SECONDARY,
   ...LOCATIONS.TERTIARY,
+  ...LOCATIONS.EXTENDED,
+  ...LOCATIONS.METRO,
+  ...LOCATIONS.REMOTE,
   ...LOCATIONS.FALLBACK,
-  ...LOCATIONS.LAST_RESORT,
 ];
 
 // Alumni Networks - for referral priority scoring
@@ -158,11 +186,22 @@ const SALARY_CONFIG = {
 
 // Scraper config
 const SCRAPER_CONFIG = {
-  MAX_AGE_DAYS: 60,           // Only fetch jobs posted within 60 days
-  RESULTS_PER_SEARCH: 50,     // Jobs per search query
-  REQUEST_DELAY_MS: 2000,     // Delay between requests (anti-bot)
+  // Freshness: only fetch jobs posted within this many days.
+  // 7 days → near-zero DB deduplication, high new-job yield.
+  MAX_AGE_DAYS: 7,
+
+  RESULTS_PER_SEARCH: 50,
+  REQUEST_DELAY_MS: 800,      // ms between page loads within a group
   MAX_RETRIES: 3,
   TIMEOUT_MS: 30000,
+
+  // Naukri pagination + concurrency
+  NAUKRI_PAGES: 10,           // max pages per keyword×location combo
+  NAUKRI_CONCURRENCY: 5,      // simultaneous browser pages
+
+  // IIMjobs
+  IIMJOBS_PAGES: 2,
+  IIMJOBS_CONCURRENCY: 4,
 };
 
 module.exports = {

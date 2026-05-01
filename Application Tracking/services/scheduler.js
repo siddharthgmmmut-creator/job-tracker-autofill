@@ -17,8 +17,20 @@ const { createBackup } = require('./backup');
 const { logger } = require('../middleware/logger');
 const config = require('../config/config');
 const { SEARCH_KEYWORDS, ALL_SEARCH_LOCATIONS } = require('../config/constants');
+const { classifyNewJobs } = require('./roleIntelligence');
 
 let scraperRunning = false;
+
+// Live scrape state — readable by the /scrape/status endpoint so the UI can poll.
+let scrapeState = {
+  running:     false,
+  startedAt:   null,   // ISO string set when run begins
+  finishedAt:  null,   // ISO string set when run ends (success or error)
+  result:      null,   // { totalNew, totalFound, totalSkipped, duration, platformResults }
+  error:       null,   // error message if the run crashed
+};
+
+function getScrapeStatus() { return { ...scrapeState }; }
 
 /**
  * Save scraped jobs to database, avoiding duplicates
@@ -45,6 +57,9 @@ function saveJobs(jobs) {
 
       // CRITICAL: Skip jobs without a real apply URL — no point storing un-applyable jobs
       if (!job.job_url || job.job_url.length < 20) { skippedCount++; continue; }
+
+      // Data quality: skip jobs with no company name (indicates extraction failure)
+      if (!job.company || job.company.trim() === '') { skippedCount++; continue; }
 
       // Skip if job URL already exists
       const exists = db.prepare('SELECT id FROM jobs WHERE job_url = ?').get(job.job_url);
@@ -140,6 +155,7 @@ async function runScrape() {
   }
 
   scraperRunning = true;
+  scrapeState = { running: true, startedAt: new Date().toISOString(), finishedAt: null, result: null, error: null };
   const startTime = Date.now();
   logger.info('🚀 Starting job scrape...');
   logger.info('─'.repeat(55));
@@ -157,8 +173,8 @@ async function runScrape() {
       logger.info('📋 Scraping Naukri...');
       const t = Date.now();
       const naukriJobs = await scrapeNaukri(
-        SEARCH_KEYWORDS.slice(0, 5), // Top 5 keywords
-        ALL_SEARCH_LOCATIONS.slice(0, 5) // Top 5 locations
+        SEARCH_KEYWORDS,              // all keywords (scraper caps internally at 10)
+        ALL_SEARCH_LOCATIONS          // all locations (scraper caps internally at 8)
       );
       const elapsed = Date.now() - t;
       const { new: n, skipped: s } = saveJobs(naukriJobs);
@@ -177,9 +193,11 @@ async function runScrape() {
     try {
       logger.info('📋 Scraping IIMjobs...');
       const t = Date.now();
+      // Keywords and locations are managed internally by the IIMjobs scraper;
+      // these args are accepted but the scraper uses its own expanded lists.
       const iimJobs = await scrapeIIMjobs(
-        ['growth manager', 'gtm manager', 'chief of staff', 'operations manager'],
-        ['Mumbai', 'Delhi', 'Bangalore']
+        SEARCH_KEYWORDS,
+        ALL_SEARCH_LOCATIONS
       );
       const elapsed = Date.now() - t;
       const { new: n, skipped: s } = saveJobs(iimJobs);
@@ -194,41 +212,53 @@ async function runScrape() {
       platformResults.push({ platform: 'IIMjobs', found: 0, newJobs: 0, skipped: 0, status: '❌', error: err.message });
     }
 
-    // 3. Company Portals — DISABLED (returns 0 jobs, causes timeouts)
-    // try {
-    //   const portalJobs = await scrapeCompanyPortals();
-    //   ...
-    // }
+    // 3. Company Portals — Lever + Greenhouse API only (Puppeteer disabled inside scraper)
+    try {
+      logger.info('📋 Scraping Company Portals (Lever + Greenhouse)...');
+      const t = Date.now();
+      const portalJobs = await scrapeCompanyPortals();
+      const elapsed = Date.now() - t;
+      const { new: n, skipped: s } = saveJobs(portalJobs);
+      totalNew += n; totalSkipped += s; totalFound += portalJobs.length;
+      logScrape('company_portal', 'api-based', 'all', portalJobs.length, n, s, 'success', null, elapsed);
+      logPlatformVisibility('company_portal', portalJobs.length, n, s, elapsed);
+      platformResults.push({ platform: 'Portals', found: portalJobs.length, newJobs: n, skipped: s, status: '✅' });
+    } catch (err) {
+      logger.error('❌ Company portals scrape failed:', err.message);
+      logScrape('company_portal', '', '', 0, 0, 0, 'error', err.message, 0);
+      platformResults.push({ platform: 'Portals', found: 0, newJobs: 0, skipped: 0, status: '❌', error: err.message });
+    }
 
-    // 4. LinkedIn (deprioritized - only runs if session cookie is set)
-    const linkedInCookie = process.env.LINKEDIN_SESSION_COOKIE;
-    if (linkedInCookie) {
-      try {
-        logger.info('📋 Scraping LinkedIn (cookie-based)...');
-        const t = Date.now();
-        const liJobs = await scrapeLinkedIn(
-          ['growth manager', 'gtm manager', 'chief of staff'],
-          ['Mumbai', 'Pune', 'Delhi']
-        );
-        const elapsed = Date.now() - t;
-        const filteredLi = liJobs.filter(j => !j.is_search_url);
-        const { new: n, skipped: s } = saveJobs(filteredLi);
-        totalNew += n; totalSkipped += s; totalFound += filteredLi.length;
-        logScrape('linkedin', 'growth,gtm,cos', 'Mumbai,Pune,Delhi', filteredLi.length, n, s, 'success', null, elapsed);
-        logPlatformVisibility('linkedin', filteredLi.length, n, s, elapsed);
-        platformResults.push({ platform: 'LinkedIn', found: filteredLi.length, newJobs: n, skipped: s, status: '✅' });
-      } catch (err) {
-        logger.error('❌ LinkedIn scrape failed:', err.message);
-        logScrape('linkedin', '', '', 0, 0, 0, 'error', err.message, 0);
-        logger.warn('⚠️  LinkedIn returned 0 jobs due to error — session cookie may have expired.');
-        platformResults.push({ platform: 'LinkedIn', found: 0, newJobs: 0, skipped: 0, status: '❌', error: err.message });
-      }
-    } else {
-      logger.info('⏭️  LinkedIn skipped (no LINKEDIN_SESSION_COOKIE set)');
-      platformResults.push({ platform: 'LinkedIn', found: 0, newJobs: 0, skipped: 0, status: '⏭️ skipped' });
+    // 4. LinkedIn — always runs (cookie hardcoded in scraper)
+    try {
+      logger.info('📋 Scraping LinkedIn...');
+      const t = Date.now();
+      const liJobs = await scrapeLinkedIn(
+        SEARCH_KEYWORDS.slice(0, 8),
+        ALL_SEARCH_LOCATIONS.slice(0, 6)
+      );
+      const elapsed = Date.now() - t;
+      const { new: n, skipped: s } = saveJobs(liJobs);
+      totalNew += n; totalSkipped += s; totalFound += liJobs.length;
+      logScrape('linkedin', SEARCH_KEYWORDS.slice(0,8).join(','), 'multi', liJobs.length, n, s, 'success', null, elapsed);
+      logPlatformVisibility('linkedin', liJobs.length, n, s, elapsed);
+      platformResults.push({ platform: 'LinkedIn', found: liJobs.length, newJobs: n, skipped: s, status: '✅' });
+    } catch (err) {
+      logger.error('❌ LinkedIn scrape failed:', err.message);
+      logScrape('linkedin', '', '', 0, 0, 0, 'error', err.message, 0);
+      logger.warn('⚠️  LinkedIn returned 0 jobs — session cookie may have expired. Update LI_SESSION_COOKIE in linkedin-scraper.js');
+      platformResults.push({ platform: 'LinkedIn', found: 0, newJobs: 0, skipped: 0, status: '❌', error: err.message });
     }
 
     const duration = Math.round((Date.now() - startTime) / 1000);
+
+    // ── Role Intelligence — classify all newly added jobs ──────
+    try {
+      const rStats = classifyNewJobs();
+      logger.info(`🧠 Intelligence: ${rStats.classified} roles assigned, ${rStats.filtered} filtered, ${rStats.noMatch} no-match`);
+    } catch (err) {
+      logger.warn(`⚠️  Role classification failed (non-fatal): ${err.message}`);
+    }
 
     // ── End-of-run visibility summary ─────────────────────────
     logger.info('─'.repeat(55));
@@ -254,12 +284,16 @@ async function runScrape() {
 
     setSetting('last_scrape', new Date().toISOString(), 'string');
 
+    scrapeState.result = { totalNew, totalFound, totalSkipped, duration, platformResults };
     return { success: true, totalNew, totalSkipped, totalFound, duration, platformResults };
   } catch (err) {
     logger.error('❌ Scrape failed:', err);
+    scrapeState.error = err.message;
     throw err;
   } finally {
     scraperRunning = false;
+    scrapeState.running    = false;
+    scrapeState.finishedAt = new Date().toISOString();
   }
 }
 
@@ -331,4 +365,4 @@ async function runManualScrape() {
   return runScrape();
 }
 
-module.exports = { initScheduler, runManualScrape, saveJobs, checkFollowUps };
+module.exports = { initScheduler, runManualScrape, saveJobs, checkFollowUps, getScrapeStatus };

@@ -7,8 +7,27 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import EmptyState from '../components/common/EmptyState';
 import toast from 'react-hot-toast';
 
-const PRIORITY_COLORS = ['', 'bg-gray-200', 'bg-yellow-200', 'bg-blue-200', 'bg-purple-200', 'bg-green-200'];
-const PRIORITY_LABELS = ['', '⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
+// Priority colour tokens (used as a 5-dot row in each card header)
+const PRIORITY_DOT = {
+  5: 'bg-emerald-500',
+  4: 'bg-blue-500',
+  3: 'bg-amber-400',
+  2: 'bg-zinc-400',
+  1: 'bg-zinc-400',
+};
+
+function PriorityDots({ score = 0 }) {
+  return (
+    <span className="inline-flex items-center gap-0.5" title={`Priority ${score}/5`}>
+      {[1, 2, 3, 4, 5].map(i => (
+        <span
+          key={i}
+          className={`w-1.5 h-1.5 rounded-full ${i <= score ? (PRIORITY_DOT[score] || 'bg-zinc-400') : 'bg-line'}`}
+        />
+      ))}
+    </span>
+  );
+}
 
 function ReferralCard({ referral, onUpdate, onDelete }) {
   const [showMsg, setShowMsg] = useState(false);
@@ -39,40 +58,52 @@ function ReferralCard({ referral, onUpdate, onDelete }) {
   };
 
   return (
-    <div className={`card p-4 border-l-4 ${referral.contacted ? 'border-green-400' : referral.priority_score >= 4 ? 'border-indigo-400' : 'border-gray-200'}`}>
+    <div className="card-hover p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
+          <div className="flex items-center gap-2 flex-wrap mb-2">
             <Badge type={referral.connection_type} />
-            <span className="text-xs" title={`Priority: ${referral.priority_score}/5`}>
-              {PRIORITY_LABELS[referral.priority_score] || ''}
-            </span>
-            {referral.contacted && <span className="badge bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">✓ Contacted</span>}
-            {referral.response_received && <span className="badge bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">💬 Replied</span>}
+            <PriorityDots score={referral.priority_score || 0} />
+            {referral.contacted && (
+              <span className="badge bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20
+                               dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20">
+                Contacted
+              </span>
+            )}
+            {referral.response_received && (
+              <span className="badge bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20
+                               dark:bg-blue-500/10 dark:text-blue-400 dark:ring-blue-500/20">
+                Replied
+              </span>
+            )}
           </div>
 
           {isSearchUrl ? (
             <div>
-              <p className="font-medium text-indigo-700 dark:text-indigo-300 text-sm">{referral.person_name.replace('[Search: ', '').replace(']', '')}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{referral.notes}</p>
+              <p className="text-[13px] font-semibold text-accent-700 dark:text-accent-400 leading-tight">
+                {referral.person_name.replace('[Search: ', '').replace(']', '')}
+              </p>
+              {referral.notes && <p className="text-2xs text-ink-faint mt-1">{referral.notes}</p>}
             </div>
           ) : (
             <div>
-              <p className="font-semibold text-gray-900 dark:text-white">{referral.person_name}</p>
-              {referral.current_role && <p className="text-sm text-gray-600 dark:text-gray-400">{referral.current_role}</p>}
-              {referral.current_company && <p className="text-xs text-gray-500 dark:text-gray-500">{referral.current_company}</p>}
-              {referral.notes && <p className="text-xs text-gray-400 mt-1 italic">{referral.notes}</p>}
+              <p className="text-[13px] font-semibold text-ink leading-tight">{referral.person_name}</p>
+              {referral.current_role && <p className="text-2xs text-ink-muted mt-0.5">{referral.current_role}</p>}
+              {referral.current_company && <p className="text-2xs text-ink-faint">{referral.current_company}</p>}
+              {referral.notes && <p className="text-2xs text-ink-faint mt-1.5 italic">{referral.notes}</p>}
             </div>
           )}
         </div>
 
         <button
           onClick={() => onDelete?.(referral.id)}
-          className="text-gray-300 hover:text-red-400 transition-colors shrink-0"
+          className="text-ink-faint hover:text-rose-500 transition-colors shrink-0"
           title="Delete"
+          aria-label="Delete referral"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
         </button>
       </div>
@@ -80,17 +111,28 @@ function ReferralCard({ referral, onUpdate, onDelete }) {
       <div className="flex gap-2 mt-3 flex-wrap">
         {referral.linkedin_url && (
           <a href={referral.linkedin_url} target="_blank" rel="noopener noreferrer"
-            className="btn-secondary text-xs py-1.5 px-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700">
-            🔗 {isSearchUrl ? 'Search LinkedIn' : 'View Profile'}
+             className="btn-accent text-2xs py-1.5 px-3 inline-flex items-center gap-1.5">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.95v5.66H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 11.01-4.13 2.06 2.06 0 010 4.13zM7.12 20.45H3.56V9h3.56v11.45z"/>
+            </svg>
+            {isSearchUrl ? 'Search LinkedIn' : 'View Profile'}
           </a>
         )}
         {!isSearchUrl && !referral.contacted && (
           <>
-            <button onClick={loadMessage} disabled={loadingMsg} className="btn-secondary text-xs py-1.5 px-3">
-              {loadingMsg ? '...' : '💬 Message'}
+            <button onClick={loadMessage} disabled={loadingMsg} className="btn-secondary text-2xs py-1.5 px-3">
+              {loadingMsg ? '…' : 'Message Template'}
             </button>
-            <button onClick={handleContact} disabled={contacting} className="btn-primary text-xs py-1.5 px-3">
-              {contacting ? '...' : '✓ Contacted'}
+            <button onClick={handleContact} disabled={contacting}
+                    className="btn-ghost text-2xs py-1.5 px-3 inline-flex items-center gap-1">
+              {contacting ? '…' : (
+                <>
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Mark Contacted
+                </>
+              )}
             </button>
           </>
         )}
@@ -107,9 +149,9 @@ function ReferralCard({ referral, onUpdate, onDelete }) {
           <div className="flex gap-3">
             <button
               onClick={() => { navigator.clipboard.writeText(message); toast.success('Copied!'); }}
-              className="btn-primary flex-1"
+              className="btn-accent flex-1"
             >
-              📋 Copy Message
+              Copy Message
             </button>
             {referral.linkedin_url && (
               <a href={referral.linkedin_url} target="_blank" rel="noopener noreferrer" className="btn-secondary flex-1 text-center">
@@ -175,12 +217,12 @@ function AddReferralModal({ open, onClose, jobId, onAdded }) {
           </div>
           <div className="col-span-2">
             <label className="label">Notes</label>
-            <input className="input" value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} placeholder="Any additional notes..." />
+            <input className="input" value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} placeholder="Any additional notes…" />
           </div>
         </div>
         <div className="flex gap-3 justify-end">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Adding...' : 'Add Referral'}</button>
+          <button type="submit" disabled={saving} className="btn-accent">{saving ? 'Adding…' : 'Add Referral'}</button>
         </div>
       </form>
     </Modal>
@@ -208,7 +250,6 @@ export default function ReferralFinder() {
       loadReferrals(selectedJobId);
       const job = jobs.find(j => j.id === parseInt(selectedJobId));
       setSelectedJob(job);
-      // Load LinkedIn search URLs
       referralsApi.getLinkedInSearchUrls(selectedJobId).then(r => setSearchUrls(r.data?.searchUrls || [])).catch(() => {});
     }
   }, [selectedJobId, jobs]);
@@ -240,8 +281,11 @@ export default function ReferralFinder() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Referral Finder</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Find the right person to refer you — prioritized by alumni & past company connections</p>
+        <p className="h-eyebrow">Network</p>
+        <h1 className="h-page mt-1">Referral Finder</h1>
+        <p className="text-2xs text-ink-faint mt-1">
+          Find the right person to refer you — prioritized by alumni &amp; past company connections.
+        </p>
       </div>
 
       {/* Job selector */}
@@ -262,65 +306,70 @@ export default function ReferralFinder() {
       {selectedJobId && selectedJob && (
         <>
           {/* Job context */}
-          <div className="card p-4 bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700">
+          <div className="card p-4 ring-1 ring-inset ring-accent-500/15 bg-accent-500/5">
             <div className="flex items-start justify-between flex-wrap gap-3">
               <div>
-                <h2 className="font-semibold text-gray-900 dark:text-white">{selectedJob.title}</h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{selectedJob.company} · {selectedJob.location}</p>
+                <p className="h-eyebrow">Targeting</p>
+                <h2 className="h-section mt-0.5">{selectedJob.title}</h2>
+                <p className="text-2xs text-ink-muted mt-0.5">{selectedJob.company} · {selectedJob.location}</p>
               </div>
               <div className="flex gap-2">
                 {selectedJob.job_url && (
-                  <a href={selectedJob.job_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs">View Job ↗</a>
+                  <a href={selectedJob.job_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-2xs">View Job ↗</a>
                 )}
-                <button onClick={() => setShowAddModal(true)} className="btn-primary text-xs">+ Add Referral</button>
+                <button onClick={() => setShowAddModal(true)} className="btn-accent text-2xs">Add Referral</button>
               </div>
             </div>
           </div>
 
           {/* Priority guide */}
           <div className="card p-4">
-            <h3 className="font-medium text-gray-900 dark:text-white mb-3 text-sm">🎯 Search Priority Guide for {selectedJob.company}</h3>
+            <p className="h-eyebrow mb-3">Search Priority for {selectedJob.company}</p>
             <div className="grid sm:grid-cols-2 gap-2">
-              {searchUrls.slice(0, 6).map((url, i) => (
-                <a
-                  key={i}
-                  href={url.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
-                >
-                  <span className="text-lg shrink-0">
-                    {url.priority >= 5 ? '🔵' : url.priority >= 4 ? '🟢' : url.priority >= 3 ? '🟡' : '⚪'}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 dark:text-white group-hover:text-indigo-600 truncate">{url.label}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{url.instruction}</div>
-                  </div>
-                  <span className="text-indigo-400 shrink-0">↗</span>
-                </a>
-              ))}
+              {searchUrls.slice(0, 6).map((url, i) => {
+                const dot = url.priority >= 5 ? 'bg-emerald-500'
+                          : url.priority >= 4 ? 'bg-blue-500'
+                          : url.priority >= 3 ? 'bg-amber-400'
+                          : 'bg-zinc-400';
+                return (
+                  <a
+                    key={i}
+                    href={url.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 p-3 bg-surface-sunken border border-line rounded-lg hover:border-line-strong transition-colors group"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${dot} flex-shrink-0`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-ink group-hover:text-accent-600 dark:group-hover:text-accent-400 truncate">{url.label}</div>
+                      <div className="text-2xs text-ink-faint">{url.instruction}</div>
+                    </div>
+                    <span className="text-ink-faint shrink-0">↗</span>
+                  </a>
+                );
+              })}
             </div>
           </div>
 
           {/* Referrals list */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900 dark:text-white">
-                Referrals ({referrals.length})
-                <span className="ml-2 text-xs text-gray-400 font-normal">
+              <div>
+                <h3 className="h-section">Referrals <span className="tabular text-ink-muted">({referrals.length})</span></h3>
+                <p className="text-2xs text-ink-faint mt-0.5 tabular">
                   {referrals.filter(r => r.contacted).length} contacted · {referrals.filter(r => r.response_received).length} responded
-                </span>
-              </h3>
-              <button onClick={() => setShowAddModal(true)} className="btn-secondary text-xs">+ Add Manually</button>
+                </p>
+              </div>
+              <button onClick={() => setShowAddModal(true)} className="btn-secondary text-2xs">Add Manually</button>
             </div>
 
-            {loading ? <LoadingSpinner text="Loading referrals..." /> :
+            {loading ? <LoadingSpinner text="Loading referrals…" /> :
               sortedReferrals.length === 0 ? (
                 <EmptyState
                   icon="🤝"
                   title="No referrals yet"
                   description="Use the search links above to find potential referrals on LinkedIn, then add them here."
-                  action={<button onClick={() => setShowAddModal(true)} className="btn-primary">+ Add Referral</button>}
+                  action={<button onClick={() => setShowAddModal(true)} className="btn-accent">Add Referral</button>}
                 />
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

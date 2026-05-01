@@ -44,10 +44,63 @@ function initDb() {
 
   seedDefaultSettings(database);
 
-  // Safe migration: add is_not_fit column if it doesn't exist yet
+  // ── Safe migrations (idempotent — column-already-exists errors are swallowed) ──
+  const addCol = (sql) => { try { database.exec(sql); } catch (_) {} };
+
+  addCol(`ALTER TABLE jobs ADD COLUMN is_not_fit       INTEGER DEFAULT 0`);
+  addCol(`ALTER TABLE jobs ADD COLUMN role_tags         TEXT    DEFAULT NULL`);
+  addCol(`ALTER TABLE jobs ADD COLUMN intelligence_score INTEGER DEFAULT 0`);
+  addCol(`ALTER TABLE jobs ADD COLUMN fit_category      TEXT    DEFAULT NULL`);
+
+  // Role definitions table (for dynamic role management via Settings)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS role_definitions (
+      id               TEXT PRIMARY KEY,
+      name             TEXT NOT NULL,
+      color            TEXT DEFAULT 'blue',
+      titles           TEXT DEFAULT '[]',
+      keywords         TEXT DEFAULT '[]',
+      responsibilities TEXT DEFAULT '[]',
+      signals          TEXT DEFAULT '[]',
+      exclude_keywords TEXT DEFAULT '[]',
+      seniority_reject TEXT DEFAULT '[]',
+      is_technical     INTEGER DEFAULT 0,
+      threshold        INTEGER DEFAULT 20,
+      is_active        INTEGER DEFAULT 1,
+      created_at       TEXT DEFAULT (datetime('now')),
+      updated_at       TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Seed role definitions from JSON (INSERT OR IGNORE — safe to re-run)
   try {
-    database.exec(`ALTER TABLE jobs ADD COLUMN is_not_fit INTEGER DEFAULT 0`);
-  } catch (_) { /* column already exists — ignore */ }
+    const repoPath = path.join(__dirname, '../data/roleRepository.json');
+    if (fs.existsSync(repoPath)) {
+      const { roles } = JSON.parse(fs.readFileSync(repoPath, 'utf8'));
+      const upsertRole = database.prepare(`
+        INSERT OR IGNORE INTO role_definitions
+          (id, name, color, titles, keywords, responsibilities, signals,
+           exclude_keywords, seniority_reject, is_technical, threshold)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const seedRoles = database.transaction((roleList) => {
+        for (const r of roleList) {
+          upsertRole.run(
+            r.id, r.name, r.color || 'blue',
+            JSON.stringify(r.titles          || []),
+            JSON.stringify(r.keywords        || []),
+            JSON.stringify(r.responsibilities || []),
+            JSON.stringify(r.signals         || []),
+            JSON.stringify(r.excludeKeywords || []),
+            JSON.stringify(r.seniorityReject || []),
+            r.isTechnical ? 1 : 0,
+            r.threshold   || 20
+          );
+        }
+      });
+      seedRoles(roles);
+    }
+  } catch (_) { /* non-fatal — roles can be seeded later */ }
 
   console.log('✅ Database initialized at:', config.database.path);
   return database;

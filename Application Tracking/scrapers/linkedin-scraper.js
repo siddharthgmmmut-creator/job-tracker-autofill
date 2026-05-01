@@ -16,6 +16,11 @@ const { logger } = require('../middleware/logger');
 const LI_JOBS_SEARCH = 'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search';
 const LI_JOBS_PUBLIC = 'https://www.linkedin.com/jobs/search';
 
+// ── Session cookie ────────────────────────────────────────────────────
+// Hardcoded li_at cookie for authenticated LinkedIn scraping.
+// Rotate this value when LinkedIn invalidates the session (typically every 30–90 days).
+const LI_SESSION_COOKIE = 'AQEFAHQBAAAAABQuP7cAAAGVS9aA6wAAAZ4BmxA6TQAAF3VybjpsaTptZW1iZXI6NjI2NTAyNjk2QEtwaeI0qDHS8xtst0LMyDgEJC9mzXk5ZSoOXk9V3EC5nYtfZi9ClEuiEURbpaOOVNwlwpLemAyCwFsryzW1rBLMOeKl1PL1pvsOczBTVIvqvhv85vUM9rJR5Ltj1zyIZvk_LLOM_KuJ74Rbops76NkeDfA591_YGgANquQ9kDRy6YII-l7Au5D78IaCy4krMiOu5w';
+
 // Location GEO IDs for LinkedIn (India cities)
 const LOCATION_GEO_IDS = {
   'Mumbai': '105214831',
@@ -35,18 +40,16 @@ function sleep(ms) {
 }
 
 function buildHeaders() {
-  const headers = {
-    'User-Agent': config.scraper.userAgent,
-    'Accept': 'text/html,application/xhtml+xml',
+  // Prefer env var so the cookie can be rotated without a code change;
+  // fall back to the hardcoded value when the env var is blank.
+  const cookie = config.user.linkedinCookie || LI_SESSION_COOKIE;
+  return {
+    'User-Agent':      config.scraper.userAgent,
+    'Accept':          'text/html,application/xhtml+xml',
     'Accept-Language': 'en-US,en;q=0.9',
+    'Cookie':          `li_at=${cookie}`,
+    'csrf-token':      'ajax:0',
   };
-
-  if (config.user.linkedinCookie) {
-    headers['Cookie'] = `li_at=${config.user.linkedinCookie}`;
-    headers['csrf-token'] = 'ajax:0';
-  }
-
-  return headers;
 }
 
 /**
@@ -64,35 +67,14 @@ function generateLinkedInSearchUrl(keyword, location) {
 }
 
 /**
- * Scrape LinkedIn jobs (requires session cookie for full access)
+ * Scrape LinkedIn jobs using the hardcoded (or env-overridden) li_at session cookie.
+ * Always runs — no skip logic.
  */
 async function scrapeLinkedIn(keywords, locations) {
   const allJobs = [];
   const seen = new Set();
 
-  if (!config.user.linkedinCookie) {
-    logger.warn('LinkedIn: No session cookie configured. Generating search URLs only.');
-    // Return search URL hints for each keyword+location combo
-    for (const keyword of keywords) {
-      for (const location of locations) {
-        allJobs.push({
-          title: `[LinkedIn Search] ${keyword} in ${location}`,
-          company: 'LinkedIn',
-          location: location,
-          job_url: generateLinkedInSearchUrl(keyword, location),
-          platform: 'linkedin',
-          posted_date: new Date().toISOString(),
-          description: `Click to search LinkedIn for: "${keyword}" jobs in ${location}`,
-          salary_mentioned: false,
-          salary_range: '',
-          requirements: '',
-          location_priority: LOCATION_PRIORITY[location] || 99,
-          is_search_url: true,
-        });
-      }
-    }
-    return allJobs;
-  }
+  logger.info(`LinkedIn: starting with cookie …${LI_SESSION_COOKIE.slice(-8)}`);
 
   // Cookie-based scraping
   for (const keyword of keywords) {
@@ -139,34 +121,52 @@ async function scrapeLinkedIn(keywords, locations) {
 }
 
 function parseLinkedInResponse(html, location) {
-  // LinkedIn returns HTML; parse with basic regex (cheerio would be better for production)
+  // LinkedIn search API returns HTML fragments.
+  // Strategy: find each job by entity URN, then slice its card block and
+  // extract title + company via CSS class name patterns.
   const jobs = [];
-  const jobMatches = html.matchAll(/data-entity-urn="urn:li:jobPosting:(\d+)"/g);
+  const seenIds = new Set();
 
-  for (const match of jobMatches) {
+  const urnRegex = /data-entity-urn="urn:li:jobPosting:(\d+)"/g;
+  let match;
+
+  while ((match = urnRegex.exec(html)) !== null) {
     const jobId = match[1];
+    if (seenIds.has(jobId)) continue;
+    seenIds.add(jobId);
+
     const job_url = `https://www.linkedin.com/jobs/view/${jobId}/`;
 
-    // Extract title (basic parsing)
-    const titleMatch = html.match(new RegExp(`jobPosting:${jobId}[^>]*>[^<]*<[^>]*>[\\s]*([^<]+)<`));
-    const title = titleMatch ? titleMatch[1].trim() : 'LinkedIn Job';
+    // Slice ~2 000 chars — enough for one card, not so much that we bleed into the next
+    const block = html.slice(match.index, Math.min(match.index + 2000, html.length));
 
-    if (!jobs.find(j => j.job_url === job_url)) {
-      jobs.push({
-        external_id: jobId,
-        title,
-        company: '',
-        location,
-        job_url,
-        platform: 'linkedin',
-        posted_date: new Date().toISOString(),
-        description: '',
-        salary_mentioned: false,
-        salary_range: '',
-        requirements: '',
-        location_priority: LOCATION_PRIORITY[location] || 99,
-      });
-    }
+    // Title: look for the base-search-card__title class (primary), or hidden-nested-link (fallback)
+    const titleMatch =
+      block.match(/class="[^"]*base-search-card__title[^"]*"[^>]*>\s*([^<]{3,120})/) ||
+      block.match(/class="[^"]*hidden-nested-link[^"]*"[^>]*>\s*([^<]{3,120})/);
+    const title = titleMatch ? titleMatch[1].trim() : '';
+    if (!title) continue; // no recognisable title → skip rather than insert noise
+
+    // Company: look for base-search-card__subtitle, get the text inside its <a> child
+    const companyMatch = block.match(
+      /class="[^"]*base-search-card__subtitle[^"]*"[\s\S]{0,300}?>\s*([^<]{2,80})\s*<\/a>/
+    );
+    const company = (companyMatch ? companyMatch[1].trim() : '') || 'Company Not Disclosed';
+
+    jobs.push({
+      external_id: jobId,
+      title,
+      company,
+      location,
+      job_url,
+      platform: 'linkedin',
+      posted_date: new Date().toISOString(),
+      description: '',
+      salary_mentioned: false,
+      salary_range: '',
+      requirements: '',
+      location_priority: LOCATION_PRIORITY[location] || 99,
+    });
   }
 
   return jobs;

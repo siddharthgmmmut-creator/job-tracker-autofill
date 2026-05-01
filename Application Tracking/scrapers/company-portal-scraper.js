@@ -119,9 +119,11 @@ const COMPANY_PORTALS = [
   },
 ];
 
+// Targeted keywords — kept tight to avoid pulling in sales/BD/PM noise
 const TARGET_KEYWORDS = [
-  'growth', 'gtm', 'go-to-market', 'strategy', 'operations', 'chief of staff',
-  'business planning', 'revenue', 'product manager', 'founder',
+  'growth manager', 'growth marketing', 'gtm', 'go-to-market',
+  'strategy', 'chief of staff', 'ceo office', "founder's office",
+  'business planning', 'operations manager', 'business operations',
 ];
 
 async function scrapePuppeteerPortal(portal, keywords) {
@@ -177,12 +179,20 @@ async function scrapePuppeteerPortal(portal, keywords) {
 }
 
 /**
- * Main export: scrape all company portals
+ * Main export: scrape all company portals.
+ * Only Lever and Greenhouse (API-based, fast, reliable) are active.
+ * Puppeteer portals are kept in COMPANY_PORTALS for future use but are SKIPPED.
  */
 async function scrapeCompanyPortals(keywords = TARGET_KEYWORDS) {
   const allJobs = [];
 
   for (const portal of COMPANY_PORTALS) {
+    // Puppeteer scraping disabled — browser-based portals cause timeouts
+    if (portal.type === 'puppeteer') {
+      logger.info(`  ⏭️  Skipping Puppeteer portal: ${portal.name}`);
+      continue;
+    }
+
     try {
       let jobs = [];
       if (portal.type === 'lever') {
@@ -191,9 +201,6 @@ async function scrapeCompanyPortals(keywords = TARGET_KEYWORDS) {
       } else if (portal.type === 'greenhouse') {
         logger.info(`  → Greenhouse: ${portal.name}`);
         jobs = await scrapeGreenhouse(portal.token, portal.name, keywords);
-      } else {
-        logger.info(`  → Puppeteer portal: ${portal.name}`);
-        jobs = await scrapePuppeteerPortal(portal, keywords);
       }
       logger.info(`    ${portal.name}: ${jobs.length} matching jobs`);
       allJobs.push(...jobs);
@@ -201,7 +208,7 @@ async function scrapeCompanyPortals(keywords = TARGET_KEYWORDS) {
       logger.warn(`Company portal failed [${portal.name}]: ${err.message}`);
     }
 
-    // Small delay between portals
+    // Small delay between portals to be respectful to their APIs
     await new Promise(r => setTimeout(r, 1500));
   }
 
