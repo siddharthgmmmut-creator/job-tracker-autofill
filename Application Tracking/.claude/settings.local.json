@@ -83,7 +83,9 @@
       "Bash(node scripts/scrape-diagnostic.js)",
       "Bash(ls /usr/local/bin/node*)",
       "Bash(ls /opt/homebrew/bin/node*)",
-      "Bash(command -v node)"
+      "Bash(command -v node)",
+      "Bash(python3 -c \" import sys, json for line in sys.stdin: try: obj = json.loads\\(line.strip\\(\\)\\); print\\(obj.get\\('timestamp',''\\), obj.get\\('message',''\\)\\) except: print\\(line.rstrip\\(\\)\\) \")",
+      "Bash(awk '{print \"Process alive:\", \\\\$11, \\\\$12}')"
     ]
   }
 }
